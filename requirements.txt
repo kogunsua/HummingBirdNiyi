@@ -29,3 +29,12 @@ quandl
 wbdata
 ta
 xgboost 
+streamlit
+yfinance
+pandas
+requests
+prophet
+plotly
+fredapi
+numpy
+pystan
