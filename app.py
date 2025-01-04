@@ -1,12 +1,5 @@
 # app.py
 import streamlit as st
-import sys
-from pathlib import Path
-
-# Add the current directory to Python path
-current_dir = Path(__file__).parent
-sys.path.append(str(current_dir))
-
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators
 from forecasting import (
@@ -15,6 +8,18 @@ from forecasting import (
     display_metrics,
     display_economic_indicators
 )
+
+# Page configuration
+st.set_page_config(
+    page_title="HummingBird v2",
+    page_icon="🐦",
+    layout="wide"
+)
+
+# Initialize session state
+if 'initialized' not in st.session_state:
+    st.session_state.initialized = True
+    st.session_state.economic_indicators = EconomicIndicators()
 
 def display_footer():
     """Display the application footer"""
@@ -25,12 +30,6 @@ def display_footer():
     """, unsafe_allow_html=True)
 
 def main():
-    st.set_page_config(
-        page_title="HummingBird v2",
-        page_icon="🐦",
-        layout="wide"
-    )
-    
     try:
         # Display branding
         st.markdown("""
@@ -126,11 +125,10 @@ def main():
                 
                 economic_data = None
                 if selected_indicator != 'None':
-                    economic_indicators = EconomicIndicators()
-                    economic_data = economic_indicators.get_indicator_data(selected_indicator)
+                    economic_data = st.session_state.economic_indicators.get_indicator_data(selected_indicator)
                     
                 if economic_data is not None:
-                    display_economic_indicators(economic_data, selected_indicator, economic_indicators)
+                    display_economic_indicators(economic_data, selected_indicator, st.session_state.economic_indicators)
                 
                 if data is not None:
                     if selected_model != "Prophet":
