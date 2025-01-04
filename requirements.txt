@@ -1,0 +1,9 @@
+# requirement.txt
+streamline
+yfinance
+pandas
+requests
+prophet
+plotly
+fredapi
+numpy
