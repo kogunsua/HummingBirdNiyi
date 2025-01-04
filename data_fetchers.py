@@ -2,6 +2,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import requests
 import fredapi
 from typing import Optional
@@ -101,7 +102,6 @@ class EconomicIndicators:
             return {}
             
         try:
-            import numpy as np
             stats = {
                 'current_value': df['value'].iloc[-1],
                 'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
@@ -247,15 +247,82 @@ class AssetDataFetcher:
             response.raise_for_status()
             
             data = response.json()
-            df = pd.DataFrame(data['prices'], columns=['Date', 'Close'])
-            df['Date'] = pd.to_datetime(df['Date'], unit='ms').tz_localize(None)
-            df.set_index('Date', inplace=True)
             
-            volume_df = pd.DataFrame(data['total_volumes'], columns=['Date', 'Volume'])
-            volume_df['Date'] = pd.to_datetime(volume_df['Date'], unit='ms').tz_localize(None)
-            volume_df.set_index('Date', inplace=True)
-            df['Volume'] = volume_df['Volume']
+            # Create price data
+            prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
+            prices_df['timestamp'] = pd.to_datetime(prices_df['timestamp'], unit='ms')
             
+            # Create volume data
+            volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
+            volumes_df['timestamp'] = pd.to_datetime(volumes_df['timestamp'], unit='ms')
+            
+            # Merge price and volume data
+            df = prices_df.merge(volumes_df[['timestamp', 'Volume']], on='timestamp', how='left')
+            
+            # Set index and ensure timezone-naive
+            df.set_index('timestamp', inplace=True)
+            df.index = df.index.tz_localize(None)
+            
+            # Add additional columns to match stock data format
+            df['Open'] = df['Close'].shift(1)
+            df['High'] = df['Close']
+            df['Low'] = df['Close']
+            
+            # Forward fill any missing values
+            df = df.ffill()
+            
+            # Ensure correct column order
+            df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+            
+            # Verify data is not empty
+            if df.empty:
+                raise ValueError(f"No data available for {symbol}")
+                
             return df
             
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error connecting to CoinGecko API: {str(e)}")
+            return None
+        except ValueError as e:
+            st.error(str(e))
+            return None
         except Exception as e:
+            st.error(f"Error fetching crypto data: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_current_price(symbol: str, asset_type: str) -> Optional[float]:
+        """Get current price for an asset"""
+        try:
+            if asset_type == "Stocks":
+                ticker = yf.Ticker(symbol)
+                price = ticker.info.get('regularMarketPrice')
+                if price is None:
+                    price = ticker.history(period='1d')['Close'].iloc[-1]
+            else:
+                try:
+                    url = 'https://api.coingecko.com/api/v3/simple/price'
+                    params = {
+                        'ids': symbol.lower(),
+                        'vs_currencies': 'usd',
+                        'include_24hr_vol': True
+                    }
+                    response = requests.get(url, params=params, timeout=10)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if symbol.lower() not in data:
+                        raise ValueError(f"Cryptocurrency {symbol} not found")
+                        
+                    price = data[symbol.lower()]['usd']
+                    return price
+                except requests.exceptions.RequestException:
+                    # Fallback to historical data if current price fetch fails
+                    data = AssetDataFetcher.get_crypto_data(symbol)
+                    if data is not None and not data.empty:
+                        return data['Close'].iloc[-1]
+                    raise
+            return price
+        except Exception as e:
+            st.error(f"Error fetching current price: {str(e)}")
+            return None
