@@ -76,17 +76,15 @@ def main():
         selected_indicator = st.sidebar.selectbox(
             "Select Economic Indicator",
             ['None'] + list(Config.INDICATORS.keys()),
-            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x,
-            key='economic_indicator'
+            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
-
+        
         # Sidebar - Real Estate Indicators
         st.sidebar.header("🏠 Real Estate Indicators")
         selected_re_indicator = st.sidebar.selectbox(
-            "Select Indicator",
+            "Select Real Estate Indicator",
             ['None'] + list(Config.REAL_ESTATE_INDICATORS.keys()),
-            format_func=lambda x: Config.REAL_ESTATE_INDICATORS[x]['description'] if x != 'None' and x in Config.REAL_ESTATE_INDICATORS else x,
-            key='real_estate_indicator'
+            format_func=lambda x: Config.REAL_ESTATE_INDICATORS[x]['description'] if x != 'None' and x in Config.REAL_ESTATE_INDICATORS else x
         )
 
         if selected_re_indicator != 'None':
@@ -139,14 +137,10 @@ def main():
                     economic_data = economic_indicators.get_indicator_data(selected_indicator)
                     if economic_data is not None:
                         display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-                
-                # Get real estate indicator data
+
+                # Display Real Estate Indicator status if selected
                 if selected_re_indicator != 'None':
-                    real_estate_indicators = RealEstateIndicators()
-                    re_data = real_estate_indicators.get_indicator_data(selected_re_indicator)
-                    if re_data is not None:
-                        st.warning(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
-                        st.info(f"Description: {Config.REAL_ESTATE_INDICATORS[selected_re_indicator]['description']}")
+                    st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
                 
                 if data is not None:
                     if selected_model != "Prophet":
