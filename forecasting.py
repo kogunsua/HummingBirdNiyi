@@ -5,15 +5,36 @@ import streamlit as st
 from prophet import Prophet
 from typing import Optional, Tuple
 
+def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare data for Prophet model"""
+    # Reset index and ensure it's named correctly
+    df = df.reset_index()
+    
+    # Rename columns to Prophet format
+    if 'Date' in df.columns:
+        df = df.rename(columns={'Date': 'ds'})
+    elif 'timestamp' in df.columns:
+        df = df.rename(columns={'timestamp': 'ds'})
+    else:
+        # If index was unnamed, the reset_index creates a column named 'index'
+        df = df.rename(columns={'index': 'ds'})
+    
+    # Ensure Close price is named 'y' for Prophet
+    df = df.rename(columns={'Close': 'y'})
+    
+    # Ensure datetime is timezone naive
+    df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
+    
+    # Select only required columns
+    df = df[['ds', 'y']]
+    
+    return df
+
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecasts using Prophet with optional economic indicators"""
     try:
-        df = data.reset_index()
-        df = df[['Date', 'Close']]
-        df.columns = ['ds', 'y']
-        
-        # Ensure no timezone info
-        df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
+        # Prepare data for Prophet
+        df = prepare_data_for_prophet(data)
         
         model = Prophet(daily_seasonality=True)
         
@@ -88,20 +109,18 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
 
     return fig
 
-def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str, current_price: Optional[float] = None):
+def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
     """Display key metrics in the Streamlit interface"""
     st.subheader("📊 Market Metrics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if current_price:
-            st.metric("Current Price", f"${current_price:.2f}")
-        else:
-            st.metric("Last Close", f"${data['Close'].iloc[-1]:.2f}")
+        current_price = data['Close'].iloc[-1]
+        st.metric("Current Price", f"${current_price:.2f}")
     
     with col2:
         forecast_price = forecast['yhat'].iloc[-1]
-        change = ((forecast_price - data['Close'].iloc[-1]) / data['Close'].iloc[-1]) * 100
+        change = ((forecast_price - current_price) / current_price) * 100
         st.metric("Forecasted Price", f"${forecast_price:.2f}", f"{change:.1f}%")
     
     with col3:
@@ -109,7 +128,7 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         st.metric("24h Volume", f"{volume:,.0f}")
     
     with col4:
-        st.metric("Forecast Period", f"{len(forecast)} days")
+        st.metric("Forecast Period", f"{len(forecast) - len(data)} days")
 
 def display_economic_indicators(economic_data: pd.DataFrame, indicator: str, economic_indicators):
     """Display economic indicator data and analysis"""
