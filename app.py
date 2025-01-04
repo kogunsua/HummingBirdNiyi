@@ -1,5 +1,12 @@
 # app.py
 import streamlit as st
+import sys
+from pathlib import Path
+
+# Add the current directory to Python path
+current_dir = Path(__file__).parent
+sys.path.append(str(current_dir))
+
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators
 from forecasting import (
