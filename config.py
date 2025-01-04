@@ -32,7 +32,7 @@ class Config:
         'CPIAUCSL': 'Consumer Price Index',
         'DFF': 'Federal Funds Rate',
         'IEF': 'iShares 7-10 Year Treasury Bond ETF',
-        'Political Sentiment'
+        'Political' :'Sentiment'
     }
 
 # Model descriptions
