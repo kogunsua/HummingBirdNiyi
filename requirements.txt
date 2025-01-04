@@ -29,3 +29,9 @@ quandl
 wbdata
 ta
 xgboost 
+streamlit
+pystan
+python-dateutil
+quandl
+census
+python-dotenv
