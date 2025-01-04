@@ -69,7 +69,54 @@ class Config:
         }
     }
 
-# Rest of MODEL_DESCRIPTIONS remains the same
+# Model descriptions
 MODEL_DESCRIPTIONS = {
-    # ... (keep existing model descriptions)
+    "Prophet": {
+        "description": """
+        Facebook's Prophet model is designed for forecasting time series data. It's particularly good at:
+        - Handling daily observations with strong seasonal effects
+        - Missing data and outliers
+        - Shifts in the trend
+        - Different types of seasonality
+        """,
+        "confidence_rating": 0.85,
+        "best_use_cases": [
+            "Stock price forecasting",
+            "Cryptocurrency price prediction",
+            "Economic indicator analysis"
+        ],
+        "limitations": [
+            "May not capture sudden market shocks",
+            "Requires sufficient historical data"
+        ],
+        "development_status": "Active"
+    },
+    "XGBoost": {
+        "description": "Gradient boosting model for feature-rich prediction",
+        "confidence_rating": 0.88,
+        "best_use_cases": ["Feature-rich prediction"],
+        "limitations": ["Under development"],
+        "development_status": "Under Development"
+    },
+    "Random Forest": {
+        "description": "Ensemble tree-based model for stable prediction",
+        "confidence_rating": 0.82,
+        "best_use_cases": ["Stable prediction"],
+        "limitations": ["Under development"],
+        "development_status": "Under Development"
+    },
+    "Linear Regression": {
+        "description": "Classic statistical model for trend following",
+        "confidence_rating": 0.75,
+        "best_use_cases": ["Trend following"],
+        "limitations": ["Under development"],
+        "development_status": "Under Development"
+    },
+    "Markov Chain": {
+        "description": "Probabilistic state model for regime analysis",
+        "confidence_rating": 0.80,
+        "best_use_cases": ["Regime analysis"],
+        "limitations": ["Under development"],
+        "development_status": "Under Development"
+    }
 }
