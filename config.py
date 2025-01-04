@@ -73,7 +73,7 @@ class Config:
 MODEL_DESCRIPTIONS = {
     "Prophet": {
         "description": """
-        Facebook's Prophet model is designed for forecasting time series data. It's particularly good at:
+        Prophet model is designed for forecasting time series data. It's particularly good at:
         - Handling daily observations with strong seasonal effects
         - Missing data and outliers
         - Shifts in the trend
