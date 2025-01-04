@@ -31,7 +31,8 @@ class Config:
         'UNRATE': 'Unemployment Rate',
         'CPIAUCSL': 'Consumer Price Index',
         'DFF': 'Federal Funds Rate',
-        'IEF': 'iShares 7-10 Year Treasury Bond ETF'
+        'IEF': 'iShares 7-10 Year Treasury Bond ETF',
+        'Political Sentiment':
     }
 
 # Model descriptions
