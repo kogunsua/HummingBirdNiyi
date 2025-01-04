@@ -10,6 +10,7 @@ from forecasting import (
 )
 
 def display_footer():
+    """Display the application footer"""
     st.markdown("""
         <div style='text-align: center; padding: 10px;'>
             <p>© 2025 AvaResearch LLC. All rights reserved.</p>
@@ -40,20 +41,23 @@ def main():
             list(MODEL_DESCRIPTIONS.keys())
         )
 
-        # Sidebar configuration
+        # Display model information
         if selected_model in MODEL_DESCRIPTIONS:
             model_info = MODEL_DESCRIPTIONS[selected_model]
             st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
             
+            # Display development status
             status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
             st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
                               unsafe_allow_html=True)
             
+            # Display confidence rating
             confidence = model_info['confidence_rating']
             color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
             st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
                               unsafe_allow_html=True)
             
+            # Display use cases and limitations
             st.sidebar.markdown("**Best Use Cases:**")
             for use_case in model_info['best_use_cases']:
                 st.sidebar.markdown(f"- {use_case}")
@@ -62,11 +66,11 @@ def main():
             for limitation in model_info['limitations']:
                 st.sidebar.markdown(f"- {limitation}")
 
-        # Sidebar - Data Sources
-        st.sidebar.header("📊 Available Data Sources")
+        # Sidebar - Data Sources Information
+        st.sidebar.header("📊 Data Sources")
         for source, description in Config.DATA_SOURCES.items():
             st.sidebar.markdown(f"**{source}**: {description}")
-
+        
         # Sidebar - Economic Indicators
         st.sidebar.header("📈 Economic Indicators")
         selected_indicator = st.sidebar.selectbox(
@@ -75,7 +79,7 @@ def main():
             format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
 
-        # Main interface
+        # Input Section
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -105,8 +109,8 @@ def main():
                 7, 90, Config.DEFAULT_PERIODS,
                 help="Select the number of days to forecast"
             )
-
-        # Generate forecast when button is clicked
+        
+        # Generate Forecast
         if st.button("🚀 Generate Forecast"):
             with st.spinner('Loading data...'):
                 data = AssetDataFetcher.get_stock_data(symbol) if asset_type == "Stocks" else AssetDataFetcher.get_crypto_data(symbol)
@@ -117,7 +121,7 @@ def main():
                     economic_data = economic_indicators.get_indicator_data(selected_indicator)
                     if economic_data is not None:
                         display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-
+                
                 if data is not None:
                     if selected_model != "Prophet":
                         st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
@@ -128,17 +132,11 @@ def main():
                         if error:
                             st.error(f"Forecasting error: {error}")
                         elif forecast is not None:
-                            # Get current price if available
-                            current_price = AssetDataFetcher.get_current_price(symbol, asset_type)
+                            display_metrics(data, forecast, asset_type, symbol)
                             
-                            # Display metrics with optional current price
-                            display_metrics(data, forecast, asset_type, symbol, current_price)
-                            
-                            # Create and display forecast plot
                             fig = create_forecast_plot(data, forecast, "Prophet", symbol)
                             st.plotly_chart(fig, use_container_width=True)
                             
-                            # Show detailed forecast data
                             with st.expander("View Detailed Forecast Data"):
                                 st.dataframe(forecast)
                 else:
