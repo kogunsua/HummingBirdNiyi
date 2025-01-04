@@ -4,6 +4,7 @@ import yfinance as yf
 import pandas as pd
 import requests
 import fredapi
+import numpy as np
 from typing import Optional
 from datetime import date, timedelta
 from config import Config
@@ -101,7 +102,6 @@ class EconomicIndicators:
             return {}
             
         try:
-            import numpy as np
             stats = {
                 'current_value': df['value'].iloc[-1],
                 'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
@@ -259,3 +259,25 @@ class AssetDataFetcher:
             return df
             
         except Exception as e:
+            st.error(f"Error fetching crypto data: {str(e)}")
+            return None
+
+    @staticmethod
+    def get_current_price(symbol: str, asset_type: str) -> Optional[float]:
+        """Get current price for an asset"""
+        try:
+            if asset_type == "Stocks":
+                ticker = yf.Ticker(symbol)
+                price = ticker.info.get('regularMarketPrice')
+                if price is None:
+                    price = ticker.history(period='1d')['Close'].iloc[-1]
+            else:
+                url = f'https://api.coingecko.com/api/v3/simple/price'
+                params = {'ids': symbol, 'vs_currencies': 'usd'}
+                response = requests.get(url, params=params, timeout=10)
+                data = response.json()
+                price = data[symbol]['usd']
+            return price
+        except Exception as e:
+            st.error(f"Error fetching current price: {str(e)}")
+            return None
