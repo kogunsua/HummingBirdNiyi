@@ -1,7 +1,7 @@
 # app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
-from data_fetchers import AssetDataFetcher, EconomicIndicators
+from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
 from forecasting import (
     prophet_forecast,
     create_forecast_plot,
@@ -28,7 +28,7 @@ def main():
         # Display branding
         st.markdown("""
             <div style='text-align: center;'>
-                <h1>🐦 HummingBird v2t</h1>
+                <h1>🐦 HummingBird v2</h1>
                 <p><i>Digital Asset Stock Forecasting with Economic Indicators</i></p>
                 <p>AvaResearch LLC - A Black Collar Production</p>
             </div>
@@ -74,10 +74,27 @@ def main():
         # Sidebar - Economic Indicators
         st.sidebar.header("📈 Economic Indicators")
         selected_indicator = st.sidebar.selectbox(
-            "Select Indicator",
+            "Select Economic Indicator",
             ['None'] + list(Config.INDICATORS.keys()),
-            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
+            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x,
+            key='economic_indicator'
         )
+
+        # Sidebar - Real Estate Indicators
+        st.sidebar.header("🏠 Real Estate Indicators")
+        selected_re_indicator = st.sidebar.selectbox(
+            "Select Indicator",
+            ['None'] + list(Config.REAL_ESTATE_INDICATORS.keys()),
+            format_func=lambda x: Config.REAL_ESTATE_INDICATORS[x]['description'] if x != 'None' and x in Config.REAL_ESTATE_INDICATORS else x,
+            key='real_estate_indicator'
+        )
+
+        if selected_re_indicator != 'None':
+            re_info = Config.REAL_ESTATE_INDICATORS[selected_re_indicator]
+            st.sidebar.markdown(f"""
+                **Description:** {re_info['description']}  
+                **Status:** ⚠️ {re_info['status']}
+            """)
 
         # Input Section
         col1, col2, col3 = st.columns(3)
@@ -115,12 +132,21 @@ def main():
             with st.spinner('Loading data...'):
                 data = AssetDataFetcher.get_stock_data(symbol) if asset_type == "Stocks" else AssetDataFetcher.get_crypto_data(symbol)
                 
+                # Get economic indicator data
                 economic_data = None
                 if selected_indicator != 'None':
                     economic_indicators = EconomicIndicators()
                     economic_data = economic_indicators.get_indicator_data(selected_indicator)
                     if economic_data is not None:
                         display_economic_indicators(economic_data, selected_indicator, economic_indicators)
+                
+                # Get real estate indicator data
+                if selected_re_indicator != 'None':
+                    real_estate_indicators = RealEstateIndicators()
+                    re_data = real_estate_indicators.get_indicator_data(selected_re_indicator)
+                    if re_data is not None:
+                        st.warning(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
+                        st.info(f"Description: {Config.REAL_ESTATE_INDICATORS[selected_re_indicator]['description']}")
                 
                 if data is not None:
                     if selected_model != "Prophet":
