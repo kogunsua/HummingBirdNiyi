@@ -41,9 +41,33 @@ def main():
             list(MODEL_DESCRIPTIONS.keys())
         )
 
+        # Display model information
+        if selected_model in MODEL_DESCRIPTIONS:
+            model_info = MODEL_DESCRIPTIONS[selected_model]
+            st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
+            
+            # Display development status
+            status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
+            st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
+                              unsafe_allow_html=True)
+            
+            # Display confidence rating
+            confidence = model_info['confidence_rating']
+            color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
+            st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
+                              unsafe_allow_html=True)
+            
+            # Display use cases and limitations
+            st.sidebar.markdown("**Best Use Cases:**")
+            for use_case in model_info['best_use_cases']:
+                st.sidebar.markdown(f"- {use_case}")
+            
+            st.sidebar.markdown("**Limitations:**")
+            for limitation in model_info['limitations']:
+                st.sidebar.markdown(f"- {limitation}")
+
         # Sidebar - Data Sources Information
         st.sidebar.header("📊 Data Sources")
-        st.sidebar.markdown("### Available Data Sources")
         for source, description in Config.DATA_SOURCES.items():
             st.sidebar.markdown(f"**{source}**: {description}")
         
@@ -54,32 +78,6 @@ def main():
             ['None'] + list(Config.INDICATORS.keys()),
             format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
-        
-        # Display model information
-        if selected_model in MODEL_DESCRIPTIONS:
-            model_info = MODEL_DESCRIPTIONS[selected_model]
-            st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
-            
-            # Display development status
-            status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
-            st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", unsafe_allow_html=True)
-            
-            # Display confidence rating
-            confidence = model_info['confidence_rating']
-            color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
-            st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", unsafe_allow_html=True)
-            
-            # Display use cases and limitations
-            st.sidebar.markdown("**Best Use Cases:**")
-            for use_case in model_info['best_use_cases']:
-                st.sidebar.markdown(f"- {use_case}")
-            
-            st.sidebar.markdown("**Limitations:**")
-            for limitation in model_info['limitations']:
-                st.sidebar.markdown(f"- {limitation}")
-            
-            if model_info['development_status'] == 'Under Development':
-                st.warning("⚠️ This model is currently under development. Using Prophet for forecasting instead.")
 
         # Input Section
         col1, col2, col3 = st.columns(3)
@@ -121,9 +119,8 @@ def main():
                 if selected_indicator != 'None':
                     economic_indicators = EconomicIndicators()
                     economic_data = economic_indicators.get_indicator_data(selected_indicator)
-                    
-                if economic_data is not None:
-                    display_economic_indicators(economic_data, selected_indicator, economic_indicators)
+                    if economic_data is not None:
+                        display_economic_indicators(economic_data, selected_indicator, economic_indicators)
                 
                 if data is not None:
                     if selected_model != "Prophet":
@@ -135,8 +132,7 @@ def main():
                         if error:
                             st.error(f"Forecasting error: {error}")
                         elif forecast is not None:
-                            current_price = AssetDataFetcher.get_current_price(symbol, asset_type)
-                            display_metrics(data, forecast, asset_type, symbol, current_price)
+                            display_metrics(data, forecast, asset_type, symbol)
                             
                             fig = create_forecast_plot(data, forecast, "Prophet", symbol)
                             st.plotly_chart(fig, use_container_width=True)
@@ -145,7 +141,7 @@ def main():
                                 st.dataframe(forecast)
                 else:
                     st.error(f"Could not load data for {symbol}. Please verify the symbol.")
-                    
+    
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.exception(e)
