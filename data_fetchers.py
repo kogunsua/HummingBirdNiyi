@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import requests
 import fredapi
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import date, timedelta
 from config import Config
 
@@ -129,14 +129,123 @@ class RealEstateIndicators:
 
 class AssetDataFetcher:
     @staticmethod
+    def _format_crypto_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+        """Format cryptocurrency dataframe to ensure consistent structure"""
+        df = df.copy()
+        
+        # Ensure all required columns exist
+        if 'Close' not in df.columns:
+            raise ValueError("DataFrame must contain 'Close' column")
+            
+        # Add missing columns if needed
+        if 'Open' not in df.columns:
+            df['Open'] = df['Close'].shift(1)
+        if 'High' not in df.columns:
+            df['High'] = df['Close']
+        if 'Low' not in df.columns:
+            df['Low'] = df['Close']
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
+            
+        # Forward fill missing values
+        df = df.ffill()
+        
+        # Ensure correct column order
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        
+        return df
+
+    @staticmethod
+    def _get_coingecko_data(symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch cryptocurrency data from CoinGecko"""
+        try:
+            url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart"
+            params = {
+                'vs_currency': 'usd',
+                'days': '365',
+                'interval': 'daily'
+            }
+            response = requests.get(url, params=params, timeout=10)
+            
+            # Check for rate limit
+            if response.status_code == 429:
+                return None
+                
+            response.raise_for_status()
+            data = response.json()
+            
+            # Process price data
+            prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
+            prices_df['timestamp'] = pd.to_datetime(prices_df['timestamp'], unit='ms')
+            
+            # Process volume data
+            volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
+            volumes_df['timestamp'] = pd.to_datetime(volumes_df['timestamp'], unit='ms')
+            
+            # Merge data
+            df = prices_df.merge(volumes_df[['timestamp', 'Volume']], on='timestamp', how='left')
+            df.set_index('timestamp', inplace=True)
+            
+            return df
+            
+        except Exception as e:
+            st.warning(f"CoinGecko error: {str(e)}")
+            return None
+
+    @staticmethod
+    def _get_polygon_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch cryptocurrency data from Polygon.io as backup"""
+        try:
+            crypto_mapping = Config.CRYPTO_MAPPINGS.get(symbol.lower(), {})
+            if not crypto_mapping:
+                return None
+                
+            polygon_symbol = crypto_mapping.get('polygon')
+            if not polygon_symbol:
+                return None
+            
+            url = f"https://api.polygon.io/v2/aggs/ticker/{polygon_symbol}/range/1/day/{Config.START}/{Config.TODAY}"
+            params = {
+                'apiKey': Config.POLYGON_API_KEY,
+                'limit': 365
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            if data.get('resultsCount', 0) == 0:
+                return None
+                
+            df = pd.DataFrame(data['results'])
+            df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            
+            # Rename columns
+            df = df.rename(columns={
+                'o': 'Open',
+                'h': 'High',
+                'l': 'Low',
+                'c': 'Close',
+                'v': 'Volume'
+            })
+            
+            return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+            
+        except Exception as e:
+            st.warning(f"Polygon.io error: {str(e)}")
+            return None
+
+    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_stock_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch stock data with fallback to multiple sources"""
+        """Fetch stock data from Yahoo Finance"""
         try:
             ticker = yf.Ticker(symbol)
             data = ticker.history(period="1y", interval="1d")
             
             if not data.empty:
+                # Remove timezone information
                 data.index = pd.to_datetime(data.index).tz_localize(None)
                 return data
                 
@@ -149,43 +258,20 @@ class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch cryptocurrency data from CoinGecko"""
+        """Fetch cryptocurrency data with fallback to multiple sources"""
         try:
-            url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart"
-            params = {
-                'vs_currency': 'usd',
-                'days': '365',
-                'interval': 'daily'
-            }
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
+            # Try CoinGecko first
+            coingecko_data = AssetDataFetcher._get_coingecko_data(symbol)
+            if coingecko_data is not None:
+                return AssetDataFetcher._format_crypto_dataframe(coingecko_data)
+                
+            # Fallback to Polygon.io if CoinGecko fails
+            st.info("Falling back to Polygon.io for cryptocurrency data...")
+            polygon_data = AssetDataFetcher._get_polygon_crypto_data(symbol)
+            if polygon_data is not None:
+                return AssetDataFetcher._format_crypto_dataframe(polygon_data)
             
-            data = response.json()
-            
-            # Create price data
-            prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
-            prices_df['timestamp'] = pd.to_datetime(prices_df['timestamp'], unit='ms')
-            
-            # Create volume data
-            volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
-            volumes_df['timestamp'] = pd.to_datetime(volumes_df['timestamp'], unit='ms')
-            
-            # Merge price and volume data
-            df = prices_df.merge(volumes_df[['timestamp', 'Volume']], on='timestamp', how='left')
-            
-            # Set index and ensure timezone-naive
-            df.set_index('timestamp', inplace=True)
-            df.index = df.index.tz_localize(None)
-            
-            # Add additional columns to match stock data format
-            df['Open'] = df['Close'].shift(1)
-            df['High'] = df['Close']
-            df['Low'] = df['Close']
-            
-            # Forward fill any missing values
-            df = df.ffill()
-            
-            return df
+            raise ValueError(f"Could not fetch data for {symbol} from any source")
             
         except Exception as e:
             st.error(f"Error fetching crypto data: {str(e)}")
