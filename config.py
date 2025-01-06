@@ -2,13 +2,14 @@
 from datetime import date, timedelta
 
 class Config:
+    # Original Configuration
     END_DATE = date.today()
     START_DATE = END_DATE - timedelta(days=365)
     TODAY = END_DATE.strftime("%Y-%m-%d")
     START = START_DATE.strftime("%Y-%m-%d")
     CACHE_TTL = 3600
-    DEFAULT_TICKER = "MSFT"
-    DEFAULT_CRYPTO = "ripple"
+    DEFAULT_TICKER = "AAPL"
+    DEFAULT_CRYPTO = "bitcoin"
     DEFAULT_PERIODS = 30
     ASSET_TYPES = ["Stocks", "Cryptocurrency"]
     
@@ -17,7 +18,7 @@ class Config:
     ALPHA_VANTAGE_API_KEY = "E3R1QOXBCPW9924S"
     POLYGON_API_KEY = "9rP1CLlxuoRWPvkEiOMxxIwNyffjUEb4"
     
-    # Data Sources
+    # Data Sources (Updated with new sources)
     DATA_SOURCES = {
         "Polygon.io": "Real-time and historical stock, forex, and cryptocurrency data",
         "CoinGecko": "Cryptocurrency data aggregator for price, volume, and historical data",
@@ -28,7 +29,7 @@ class Config:
         "Alpha Vantage": "Macroeconomic data, including interest rates and financial market data"
     }
     
-    # Economic Indicators
+    # Economic Indicators (Original)
     INDICATORS = {
         'GDP': 'Gross Domestic Product',
         'UNRATE': 'Unemployment Rate',
@@ -37,7 +38,7 @@ class Config:
         'IEF': 'iShares 7-10 Year Treasury Bond ETF'
     }
     
-    # Real Estate Indicators
+    # Real Estate Indicators (New)
     REAL_ESTATE_INDICATORS = {
         'Treasury Yields': {
             'description': 'Treasury yield curves and rates',
@@ -69,11 +70,65 @@ class Config:
         }
     }
 
-# Model descriptions
+    # Crypto Symbol Mappings (New - for resilient data fetching)
+    CRYPTO_MAPPINGS = {
+        'bitcoin': {
+            'coingecko': 'bitcoin',
+            'polygon': 'X:BTCUSD',
+            'description': 'Bitcoin'
+        },
+        'ethereum': {
+            'coingecko': 'ethereum',
+            'polygon': 'X:ETHUSD',
+            'description': 'Ethereum'
+        },
+        'ripple': {
+            'coingecko': 'ripple',
+            'polygon': 'X:XRPUSD',
+            'description': 'Ripple'
+        },
+        'dogecoin': {
+            'coingecko': 'dogecoin',
+            'polygon': 'X:DOGEUSD',
+            'description': 'Dogecoin'
+        },
+        'cardano': {
+            'coingecko': 'cardano',
+            'polygon': 'X:ADAUSD',
+            'description': 'Cardano'
+        },
+        'solana': {
+            'coingecko': 'solana',
+            'polygon': 'X:SOLUSD',
+            'description': 'Solana'
+        },
+        'polkadot': {
+            'coingecko': 'polkadot',
+            'polygon': 'X:DOTUSD',
+            'description': 'Polkadot'
+        },
+        'chainlink': {
+            'coingecko': 'chainlink',
+            'polygon': 'X:LINKUSD',
+            'description': 'Chainlink'
+        },
+        'stellar': {
+            'coingecko': 'stellar',
+            'polygon': 'X:XLMUSD',
+            'description': 'Stellar'
+        },
+        'uniswap': {
+            'coingecko': 'uniswap',
+            'polygon': 'X:UNIUSD',
+            'description': 'Uniswap'
+        }
+    }
+
+# Original MODEL_DESCRIPTIONS
 MODEL_DESCRIPTIONS = {
     "Prophet": {
         "description": """
-        Prophet model is designed for forecasting time series data. It's particularly good at:
+        Facebook's Prophet model is designed for forecasting time series data. It's particularly good at:
         - Handling daily observations with strong seasonal effects
         - Missing data and outliers
         - Shifts in the trend
