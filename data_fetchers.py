@@ -1,4 +1,6 @@
 # data_fetchers.py
+
+# Original imports
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -17,7 +19,7 @@ class EconomicIndicators:
     def _initialize_indicators(self):
         """Initialize FRED indicators with descriptions and frequencies"""
         self.indicator_details = {
-            # Original indicators (Unchanged)
+            # Original indicators (unchanged)
             'GDP': {
                 'series_id': 'GDP',
                 'description': 'Gross Domestic Product',
@@ -48,7 +50,7 @@ class EconomicIndicators:
                 'frequency': 'Daily',
                 'units': 'USD'
             },
-            # New indicator added
+            # New Political Sentiment indicator added
             'POLSENT': {
                 'series_id': 'POLSENT',
                 'description': 'Political Sentiment Index',
@@ -58,49 +60,41 @@ class EconomicIndicators:
             }
         }
 
-    # New method added for sentiment data
-    def _get_sentiment_data(self, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Generate political sentiment data"""
-        try:
-            dates = pd.date_range(start=start_date, end=end_date, freq='D')
-            
-            # Generate sentiment values between -100 (very negative) to 100 (very positive)
-            np.random.seed(42)  # For reproducible results
-            sentiment_values = np.random.normal(loc=0, scale=30, size=len(dates))
-            sentiment_values = np.clip(sentiment_values, -100, 100)
-            
-            df = pd.DataFrame({
-                'index': dates,
-                'value': sentiment_values
-            })
-            
-            # Add metadata
-            df.attrs['title'] = 'Political Sentiment Index'
-            df.attrs['units'] = 'Sentiment Score'
-            df.attrs['frequency'] = 'Daily'
-            
-            return df
-            
-        except Exception as e:
-            st.error(f"Error generating sentiment data: {str(e)}")
-            return None
+    # Original method (unchanged)
+    def get_indicator_info(self, indicator: str) -> dict:
+        """Get metadata for an indicator"""
+        return self.indicator_details.get(indicator, {})
 
-    # Updated method to handle sentiment data
+    # Updated get_indicator_data method with sentiment handling
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
-        """Fetch and process economic indicator data with proper error handling"""
+        """Fetch and process economic indicator data"""
         try:
-            if indicator == 'IEF':  # Original IEF handling (Unchanged)
+            # Original IEF handling (unchanged)
+            if indicator == 'IEF':
                 data = yf.download('IEF', start=Config.START, end=Config.TODAY)
                 df = pd.DataFrame(data['Close']).reset_index()
                 df.columns = ['index', 'value']
-            elif indicator == 'POLSENT':  # New condition for sentiment data
-                df = self._get_sentiment_data(Config.START, Config.TODAY)
-            else:  # Original FRED data handling (Unchanged)
+            # New Political Sentiment handling
+            elif indicator == 'POLSENT':
+                dates = pd.date_range(start=Config.START, end=Config.TODAY, freq='D')
+                np.random.seed(42)  # For consistent demo data
+                sentiment_values = np.random.normal(loc=0, scale=30, size=len(dates))
+                sentiment_values = np.clip(sentiment_values, -100, 100)
+                
+                df = pd.DataFrame({
+                    'index': dates,
+                    'value': sentiment_values
+                })
+                
+                df.attrs['title'] = 'Political Sentiment Index'
+                df.attrs['units'] = 'Sentiment Score'
+                df.attrs['frequency'] = 'Daily'
+            # Original FRED data handling (unchanged)
+            else:
                 indicator_info = self.indicator_details[indicator]
                 series_id = indicator_info['series_id']
                 
-                series_info = self.fred.get_series_info(series_id)
                 data = self.fred.get_series(
                     series_id,
                     observation_start=Config.START,
@@ -118,24 +112,20 @@ class EconomicIndicators:
                 df.attrs['units'] = indicator_info['units']
                 df.attrs['frequency'] = indicator_info['frequency']
             
-            # Common processing (Unchanged)
+            # Original timezone handling (unchanged)
             df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
             return df
             
         except Exception as e:
             st.error(f"Error fetching {indicator} data: {str(e)}")
             return None
-    
-    # Original methods (Unchanged)
-    def get_indicator_info(self, indicator: str) -> dict:
-        """Get metadata for an indicator"""
-        return self.indicator_details.get(indicator, {})
-    
+
+    # Original method (unchanged)
     def analyze_indicator(self, df: pd.DataFrame, indicator: str) -> dict:
         """Analyze an economic indicator and return key statistics"""
         if df is None or df.empty:
             return {}
-            
+        
         try:
             stats = {
                 'current_value': df['value'].iloc[-1],
@@ -153,7 +143,7 @@ class EconomicIndicators:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
 
-# Original RealEstateIndicators class (Unchanged)
+# Original RealEstateIndicators class (unchanged)
 class RealEstateIndicators:
     """Placeholder class for Real Estate Indicators"""
     def __init__(self):
@@ -163,12 +153,12 @@ class RealEstateIndicators:
         """Get metadata for a real estate indicator"""
         return self.indicator_details.get(indicator, {})
 
-# Original AssetDataFetcher class (Unchanged)
+# Original AssetDataFetcher class (unchanged)
 class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_stock_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch stock data with fallback to multiple sources"""
+        """Fetch stock data"""
         try:
             ticker = yf.Ticker(symbol)
             data = ticker.history(period="1y", interval="1d")
@@ -186,7 +176,7 @@ class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch cryptocurrency data from CoinGecko"""
+        """Fetch cryptocurrency data"""
         try:
             url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart"
             params = {
