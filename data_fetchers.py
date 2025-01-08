@@ -11,7 +11,6 @@ from typing import Optional
 from datetime import date, timedelta
 from config import Config
 
-# Original EconomicIndicators class (unchanged)
 class EconomicIndicators:
     def __init__(self):
         self.fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
@@ -20,6 +19,7 @@ class EconomicIndicators:
     def _initialize_indicators(self):
         """Initialize FRED indicators with descriptions and frequencies"""
         self.indicator_details = {
+            # Original indicators
             'GDP': {
                 'series_id': 'GDP',
                 'description': 'Gross Domestic Product',
@@ -50,6 +50,7 @@ class EconomicIndicators:
                 'frequency': 'Daily',
                 'units': 'USD'
             },
+            # New indicator
             'POLSENT': {
                 'series_id': 'POLSENT',
                 'description': 'Political Sentiment Index',
@@ -58,17 +59,20 @@ class EconomicIndicators:
                 'is_sentiment': True
             }
         }
-    
+
+    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
-    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
-        """Fetch and process economic indicator data with proper error handling"""
+    def _get_indicator_data_static(indicator: str, fred_api_key: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Static method for cached indicator data fetching"""
         try:
+            fred = fredapi.Fred(api_key=fred_api_key)
+            
             if indicator == 'IEF':
-                data = yf.download('IEF', start=Config.START, end=Config.TODAY)
+                data = yf.download('IEF', start=start_date, end=end_date)
                 df = pd.DataFrame(data['Close']).reset_index()
                 df.columns = ['index', 'value']
             elif indicator == 'POLSENT':
-                dates = pd.date_range(start=Config.START, end=Config.TODAY, freq='D')
+                dates = pd.date_range(start=start_date, end=end_date, freq='D')
                 np.random.seed(42)
                 sentiment_values = np.random.normal(loc=0, scale=30, size=len(dates))
                 sentiment_values = np.clip(sentiment_values, -100, 100)
@@ -77,38 +81,44 @@ class EconomicIndicators:
                     'index': dates,
                     'value': sentiment_values
                 })
-                
-                df.attrs['title'] = 'Political Sentiment Index'
-                df.attrs['units'] = 'Sentiment Score'
-                df.attrs['frequency'] = 'Daily'
             else:
-                indicator_info = self.indicator_details[indicator]
-                series_id = indicator_info['series_id']
-                
-                data = self.fred.get_series(
-                    series_id,
-                    observation_start=Config.START,
-                    observation_end=Config.TODAY,
-                    frequency='d'
-                )
-                
+                data = fred.get_series(indicator, observation_start=start_date, observation_end=end_date)
                 df = pd.DataFrame(data).reset_index()
                 df.columns = ['index', 'value']
-                
-                if indicator_info['frequency'] != 'Daily':
-                    df['value'] = df['value'].ffill()
-                
-                df.attrs['title'] = indicator_info['description']
-                df.attrs['units'] = indicator_info['units']
-                df.attrs['frequency'] = indicator_info['frequency']
             
-            df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
+            if df is not None:
+                df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
+            
             return df
             
         except Exception as e:
-            st.error(f"Error fetching {indicator} data: {str(e)}")
+            st.error(f"Error fetching indicator data: {str(e)}")
             return None
-    
+
+    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
+        """Fetch and process economic indicator data"""
+        df = self._get_indicator_data_static(
+            indicator,
+            self.fred.api_key,
+            Config.START,
+            Config.TODAY
+        )
+        
+        if df is not None and indicator in self.indicator_details:
+            indicator_info = self.indicator_details[indicator]
+            # Add metadata
+            df.attrs.update({
+                'title': indicator_info['description'],
+                'units': indicator_info['units'],
+                'frequency': indicator_info['frequency']
+            })
+            
+            # Forward fill missing values for non-daily series
+            if indicator_info['frequency'] != 'Daily':
+                df['value'] = df['value'].ffill()
+        
+        return df
+
     def get_indicator_info(self, indicator: str) -> dict:
         """Get metadata for an indicator"""
         return self.indicator_details.get(indicator, {})
@@ -129,28 +139,39 @@ class EconomicIndicators:
                 'std_dev': df['value'].std()
             }
             
+            # Add sentiment-specific stats for sentiment indicators
+            if indicator == 'POLSENT':
+                stats.update({
+                    'sentiment_direction': 'Positive' if stats['current_value'] > 20 else 
+                                         'Negative' if stats['current_value'] < -20 else 'Neutral',
+                    'sentiment_trend': 'Improving' if stats['change_1m'] > 0 else 
+                                     'Declining' if stats['change_1m'] < 0 else 'Stable'
+                })
+            
             return stats
             
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
 
-# Original RealEstateIndicators class (unchanged)
 class RealEstateIndicators:
-    """Placeholder class for Real Estate Indicators"""
+    """Handle Real Estate market indicators"""
     def __init__(self):
         self.indicator_details = Config.REAL_ESTATE_INDICATORS
     
     def get_indicator_info(self, indicator: str) -> dict:
         """Get metadata for a real estate indicator"""
-        return self.indicator_details.get(indicator, {})
+        try:
+            return self.indicator_details.get(indicator, {})
+        except Exception as e:
+            st.error(f"Error fetching real estate indicator info: {str(e)}")
+            return {}
 
-# Updated AssetDataFetcher class with resilient crypto support
 class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_stock_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch stock data with proper error handling"""
+        """Fetch stock data"""
         try:
             ticker = yf.Ticker(symbol)
             data = ticker.history(period="1y", interval="1d")
@@ -168,7 +189,7 @@ class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def get_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch cryptocurrency data with resilient fallback"""
+        """Fetch cryptocurrency data with fallback support"""
         try:
             # Try CoinGecko first
             url = f"https://api.coingecko.com/api/v3/coins/{symbol}/market_chart"
@@ -187,32 +208,38 @@ class AssetDataFetcher:
             response.raise_for_status()
             data = response.json()
             
+            # Process price data
             prices_df = pd.DataFrame(data['prices'], columns=['Date', 'Close'])
             prices_df['Date'] = pd.to_datetime(prices_df['Date'], unit='ms')
             
+            # Process volume data
             volumes_df = pd.DataFrame(data['total_volumes'], columns=['Date', 'Volume'])
             volumes_df['Date'] = pd.to_datetime(volumes_df['Date'], unit='ms')
             
+            # Merge data
             df = prices_df.merge(volumes_df[['Date', 'Volume']], on='Date', how='left')
             df.set_index('Date', inplace=True)
             df.index = df.index.tz_localize(None)
             
+            # Add required columns
             df['Open'] = df['Close'].shift(1)
             df['High'] = df['Close']
             df['Low'] = df['Close']
             
+            # Forward fill missing values
             df = df.ffill()
             
             return df
             
         except Exception as e:
-            st.info("Falling back to Polygon.io...")
+            st.info("CoinGecko error, trying Polygon.io...")
             return AssetDataFetcher._get_polygon_crypto_data(symbol)
 
     @staticmethod
     def _get_polygon_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch cryptocurrency data from Polygon.io as fallback"""
+        """Fetch crypto data from Polygon.io as fallback"""
         try:
+            # Common crypto symbols mapping
             crypto_mapping = {
                 'bitcoin': 'X:BTCUSD',
                 'ethereum': 'X:ETHUSD',
