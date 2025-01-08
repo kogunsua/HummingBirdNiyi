@@ -1,5 +1,4 @@
 # app.py
-# Original imports plus any new ones needed
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -18,6 +17,32 @@ def display_footer():
         </div>
     """, unsafe_allow_html=True)
 
+def display_model_details(model_info: dict):
+    """Display enhanced model information in the sidebar"""
+    # Display model name and status
+    status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
+    st.sidebar.markdown(f"### {model_info['name']}")
+    st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
+                       unsafe_allow_html=True)
+    
+    # Display confidence rating
+    confidence = model_info['confidence_rating']
+    color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
+    st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
+                       unsafe_allow_html=True)
+    
+    # Display technical details
+    st.sidebar.markdown(f"**Technical Level:** {model_info['technical_level']}")
+    st.sidebar.markdown(f"**Computation Speed:** {model_info['computation_speed']}")
+    
+    # Display model description with proper formatting
+    st.sidebar.markdown("### Model Details")
+    st.sidebar.markdown(model_info['description'])
+    
+    # Show development status warning if needed
+    if model_info['development_status'] == 'Under Development':
+        st.warning("⚠️ This model is currently under development. Using Prophet for forecasting instead.")
+
 def main():
     st.set_page_config(
         page_title="HummingBird v2",
@@ -35,42 +60,33 @@ def main():
             </div>
         """, unsafe_allow_html=True)
         
-        # Sidebar - Model Selection
+        # Sidebar - Model Selection with enhanced display
         st.sidebar.header("🔮 Select Forecasting Model")
-        selected_model = st.sidebar.selectbox(
-            "Available Models",
-            list(MODEL_DESCRIPTIONS.keys())
-        )
-
-        # Display model information
-        if selected_model in MODEL_DESCRIPTIONS:
+        
+        # Create two columns in sidebar for model selection
+        model_col1, model_col2 = st.sidebar.columns([3, 1])
+        
+        with model_col1:
+            selected_model = st.selectbox(
+                "Available Models",
+                list(MODEL_DESCRIPTIONS.keys())
+            )
+        
+        # Show model status indicator
+        with model_col2:
             model_info = MODEL_DESCRIPTIONS[selected_model]
-            st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
-            
-            # Display development status
-            status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
-            st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
-                              unsafe_allow_html=True)
-            
-            # Display confidence rating
-            confidence = model_info['confidence_rating']
-            color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
-            st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
-                              unsafe_allow_html=True)
-            
-            # Display use cases and limitations
-            st.sidebar.markdown("**Best Use Cases:**")
-            for use_case in model_info['best_use_cases']:
-                st.sidebar.markdown(f"- {use_case}")
-            
-            st.sidebar.markdown("**Limitations:**")
-            for limitation in model_info['limitations']:
-                st.sidebar.markdown(f"- {limitation}")
+            status_emoji = "🟢" if model_info['development_status'] == 'Active' else "🟡"
+            st.markdown(f"### {status_emoji}")
+
+        # Display enhanced model information
+        if selected_model in MODEL_DESCRIPTIONS:
+            display_model_details(MODEL_DESCRIPTIONS[selected_model])
 
         # Sidebar - Data Sources Information
         st.sidebar.header("📊 Data Sources")
-        for source, description in Config.DATA_SOURCES.items():
-            st.sidebar.markdown(f"**{source}**: {description}")
+        with st.sidebar.expander("Available Data Sources", expanded=False):
+            for source, description in Config.DATA_SOURCES.items():
+                st.markdown(f"**{source}**: {description}")
         
         # Sidebar - Economic Indicators
         st.sidebar.header("📈 Economic Indicators")
@@ -79,7 +95,7 @@ def main():
             ['None'] + list(Config.INDICATORS.keys()),
             format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
-        
+
         # Sidebar - Real Estate Indicators
         st.sidebar.header("🏠 Real Estate Indicators")
         selected_re_indicator = st.sidebar.selectbox(
@@ -131,7 +147,6 @@ def main():
             with st.spinner('Loading data...'):
                 data = AssetDataFetcher.get_stock_data(symbol) if asset_type == "Stocks" else AssetDataFetcher.get_crypto_data(symbol)
                 
-                # Get economic indicator data
                 economic_data = None
                 if selected_indicator != 'None':
                     economic_indicators = EconomicIndicators()
@@ -144,6 +159,7 @@ def main():
                     st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
                 
                 if data is not None:
+                    # Always use Prophet but show appropriate message for other models
                     if selected_model != "Prophet":
                         st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
                     
@@ -155,7 +171,9 @@ def main():
                         elif forecast is not None:
                             display_metrics(data, forecast, asset_type, symbol)
                             
-                            fig = create_forecast_plot(data, forecast, "Prophet", symbol)
+                            fig = create_forecast_plot(data, forecast, 
+                                                     "Prophet" if selected_model == "Prophet" else f"Prophet (as {selected_model} is under development)", 
+                                                     symbol)
                             st.plotly_chart(fig, use_container_width=True)
                             
                             with st.expander("View Detailed Forecast Data"):
