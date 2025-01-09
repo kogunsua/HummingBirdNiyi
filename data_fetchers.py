@@ -1047,3 +1047,18 @@ class IntegratedDataFetcher:
 
     @staticmethod
     def _calculate_
+    @staticmethod
+    def _calculate_correlation(series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate correlation between two price series"""
+        return series1.pct_change().corr(series2.pct_change())
+
+    @staticmethod
+    def _calculate_beta(market_returns: pd.Series, asset_returns: pd.Series) -> float:
+        """Calculate beta of an asset against the market"""
+        market_change = market_returns.pct_change()
+        asset_change = asset_returns.pct_change()
+        
+        covariance = market_change.cov(asset_change)
+        market_variance = market_change.var()
+        
+        return covariance / market_variance if market_variance != 0 else 0
