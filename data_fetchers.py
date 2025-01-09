@@ -29,6 +29,10 @@ class AssetDataFetcher:
                     raise ValueError(f"No data available for {symbol}")
                 
                 data.index = pd.to_datetime(data.index).tz_localize(None)
+                
+                # Add technical indicators
+                data = AssetDataFetcher.add_technical_indicators(data)
+                
                 return data
                 
         except Exception as e:
@@ -74,6 +78,9 @@ class AssetDataFetcher:
                 df['Open'] = df['Close'].shift(1)
                 df['High'] = df['Close']
                 df['Low'] = df['Close']
+                
+                # Add technical indicators
+                df = AssetDataFetcher.add_technical_indicators(df)
                 
                 return df.ffill()
                 
@@ -128,11 +135,55 @@ class AssetDataFetcher:
             df.set_index('Date', inplace=True)
             df.index = df.index.tz_localize(None)
             
+            # Add technical indicators
+            df = AssetDataFetcher.add_technical_indicators(df)
+            
             return df.sort_index()
             
         except Exception as e:
             st.error(f"Error fetching crypto data: {str(e)}")
             return None
+
+    @staticmethod
+    def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        """Add technical indicators to price data"""
+        try:
+            tech_df = df.copy()
+            
+            # RSI
+            delta = tech_df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            tech_df['RSI'] = 100 - (100 / (1 + rs))
+            
+            # Moving Averages
+            tech_df['MA20'] = tech_df['Close'].rolling(window=20).mean()
+            tech_df['MA50'] = tech_df['Close'].rolling(window=50).mean()
+            
+            # Bollinger Bands
+            tech_df['BB_Middle'] = tech_df['Close'].rolling(window=20).mean()
+            bb_std = tech_df['Close'].rolling(window=20).std()
+            tech_df['BB_Upper'] = tech_df['BB_Middle'] + (2 * bb_std)
+            tech_df['BB_Lower'] = tech_df['BB_Middle'] - (2 * bb_std)
+            
+            # MACD
+            exp1 = tech_df['Close'].ewm(span=12, adjust=False).mean()
+            exp2 = tech_df['Close'].ewm(span=26, adjust=False).mean()
+            tech_df['MACD'] = exp1 - exp2
+            tech_df['Signal_Line'] = tech_df['MACD'].ewm(span=9, adjust=False).mean()
+            
+            # Momentum
+            tech_df['Momentum'] = tech_df['Close'].pct_change(periods=10)
+            
+            # Volatility
+            tech_df['Volatility'] = tech_df['Close'].pct_change().rolling(window=20).std()
+            
+            return tech_df
+            
+        except Exception as e:
+            st.warning(f"Error calculating technical indicators: {str(e)}")
+            return df
 
 class EconomicIndicators:
     """Handle economic indicators"""
@@ -255,14 +306,25 @@ class GDELTDataFetcher:
     """Handle GDELT data collection and analysis"""
     def __init__(self):
         self.config = Config.GDELT_CONFIG
-        
+    
+    @st.cache_data(ttl=Config.CACHE_TTL)
     def fetch_gkg_data(self, start_date: datetime, end_date: datetime) -> pd.DataFrame:
-        """Fetch GDELT GKG data for given date range"""
+        """Fetch GDELT GKG data with caching"""
+        try:
+            return self._fetch_gkg_data_internal(start_date, end_date)
+        except Exception as e:
+            st.error(f"Error fetching GDELT data: {str(e)}")
+            return pd.DataFrame()
+    
+    def _fetch_gkg_data_internal(self, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+        """Internal method for GKG data fetching"""
         all_data = []
-        current_date = start_date
-
+        total_intervals = int((end_date - start_date).total_seconds() / 900) + 1  # 15-minute intervals
+        
         with st.spinner('Fetching market sentiment data...'):
-            while current_date <= end_date:
+            progress_bar = st.progress(0)
+            
+            for i, current_date in enumerate(pd.date_range(start_date, end_date, freq='15min')):
                 try:
                     filename = f"{current_date.strftime('%Y%m%d%H%M%S')}.gkg.csv.zip"
                     url = f"{self.config['gkg_base_url']}{filename}"
@@ -273,10 +335,12 @@ class GDELTDataFetcher:
                                    usecols=self.config['required_columns']['gkg'])
                     all_data.append(df)
                     
-                except Exception as e:
+                except Exception:
                     pass  # Silently handle missing data points
                 
-                current_date += timedelta(minutes=15)
+                # Update progress
+                progress = min(float(i + 1) / total_intervals, 1.0)
+                progress_bar.progress(progress)
 
         return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
@@ -288,13 +352,12 @@ class GDELTDataFetcher:
         processed = pd.DataFrame()
         processed['date'] = pd.to_datetime(df['DATE'])
         processed['themes'] = df['THEMES'].apply(self._extract_themes)
+        processed['tone'] = df['TONE'].apply
         processed['tone'] = df['TONE'].apply(self._process_tone)
         processed['articles'] = pd.to_numeric(df['NUMARTS'], errors='coerce')
         
         # Calculate sentiment scores
-        processed['market_sentiment'] = processed.apply(
-            self._calculate_sentiment_score, axis=1
-        )
+        processed['market_sentiment'] = processed.apply(self._calculate_sentiment_score, axis=1)
         
         # Calculate additional metrics
         processed['volume_impact'] = np.log1p(processed['articles'])
@@ -312,7 +375,40 @@ class GDELTDataFetcher:
         daily_data['sentiment_ma5'] = daily_data['market_sentiment'].rolling(window=5).mean()
         daily_data['sentiment_ma20'] = daily_data['market_sentiment'].rolling(window=20).mean()
         
+        # Add advanced sentiment metrics
+        daily_data = self.calculate_advanced_sentiment(daily_data)
+        
         return daily_data
+
+    def calculate_advanced_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate advanced sentiment metrics"""
+        df = df.copy()
+        
+        # Sentiment momentum and acceleration
+        df['sentiment_momentum'] = df['market_sentiment'].diff()
+        df['sentiment_acceleration'] = df['sentiment_momentum'].diff()
+        
+        # Sentiment volatility
+        df['sentiment_volatility'] = df['market_sentiment'].rolling(window=5).std()
+        
+        # Extreme sentiment indicators
+        df['extreme_positive'] = df['market_sentiment'] > df['sentiment_ma20'] + 2 * df['sentiment_volatility']
+        df['extreme_negative'] = df['market_sentiment'] < df['sentiment_ma20'] - 2 * df['sentiment_volatility']
+        
+        # Theme impact
+        df['theme_impact'] = df['theme_relevance'] * df['market_sentiment']
+        
+        # Sentiment regime
+        df['sentiment_regime'] = pd.cut(
+            df['market_sentiment'],
+            bins=[-np.inf, -0.5, -0.2, 0.2, 0.5, np.inf],
+            labels=['Very Negative', 'Negative', 'Neutral', 'Positive', 'Very Positive']
+        )
+        
+        # Trend strength
+        df['trend_strength'] = abs(df['sentiment_momentum']) / df['sentiment_volatility']
+        
+        return df
 
     def _extract_themes(self, themes_str: str) -> List[str]:
         """Extract market-relevant themes from GDELT themes string"""
@@ -371,6 +467,7 @@ class IntegratedDataFetcher:
         self.gdelt_fetcher = GDELTDataFetcher()
         self.economic_indicators = EconomicIndicators()
         self.asset_fetcher = AssetDataFetcher()
+        self.real_estate_indicators = RealEstateIndicators()
 
     def fetch_all_data(self,
                       symbol: str,
@@ -416,6 +513,33 @@ class IntegratedDataFetcher:
             st.error(f"Error fetching integrated data: {str(e)}")
             return {}
 
+    def get_enhanced_market_context(self, 
+                                  symbol: str, 
+                                  asset_type: str,
+                                  sentiment_data: Optional[pd.DataFrame] = None) -> Dict[str, any]:
+        """Get enhanced market context including sentiment impact"""
+        context = self.get_market_context(symbol, asset_type)
+        
+        if sentiment_data is not None:
+            price_data = self.asset_fetcher.get_stock_data(symbol) if asset_type == "Stocks" \
+                        else self.asset_fetcher.get_crypto_data(symbol)
+            
+            if price_data is not None:
+                # Calculate sentiment impact metrics
+                context.update({
+                    'sentiment_correlation': self._calculate_sentiment_correlation(
+                        price_data['Close'],
+                        sentiment_data['market_sentiment']
+                    ),
+                    'sentiment_lag_effect': self._calculate_sentiment_lag_effect(
+                        price_data['Close'],
+                        sentiment_data['market_sentiment']
+                    ),
+                    'technical_signals': self._get_technical_signals(price_data)
+                })
+        
+        return context
+
     def prepare_prophet_data(self,
                            price_data: pd.DataFrame,
                            sentiment_data: Optional[pd.DataFrame] = None,
@@ -431,6 +555,12 @@ class IntegratedDataFetcher:
             sentiment_df.columns = ['ds', 'sentiment']
             df = df.merge(sentiment_df, on='ds', how='left')
             df['sentiment'].fillna(method='ffill', inplace=True)
+            
+            # Add advanced sentiment features
+            if 'sentiment_regime' in sentiment_df.columns:
+                df['sentiment_regime'] = sentiment_df['sentiment_regime']
+            if 'trend_strength' in sentiment_df.columns:
+                df['trend_strength'] = sentiment_df['trend_strength']
         
         # Add economic features if available
         if economic_data:
@@ -468,6 +598,52 @@ class IntegratedDataFetcher:
                 aligned_data[key] = df_copy[start_date:end_date]
         
         return aligned_data
+
+    def _calculate_sentiment_correlation(self, prices: pd.Series, sentiment: pd.Series,
+                                      windows: List[int] = [5, 10, 20]) -> Dict[str, float]:
+        """Calculate correlation between price and sentiment at different windows"""
+        correlations = {}
+        for window in windows:
+            price_returns = prices.pct_change(window)
+            sentiment_ma = sentiment.rolling(window=window).mean()
+            correlations[f'{window}d_correlation'] = price_returns.corr(sentiment_ma)
+        return correlations
+
+    def _calculate_sentiment_lag_effect(self, prices: pd.Series, sentiment: pd.Series,
+                                      max_lag: int = 5) -> Dict[str, float]:
+        """Calculate lagged effects of sentiment on price"""
+        lag_effects = {}
+        price_returns = prices.pct_change()
+        
+        for lag in range(1, max_lag + 1):
+            lagged_sentiment = sentiment.shift(lag)
+            correlation = price_returns.corr(lagged_sentiment)
+            lag_effects[f'lag_{lag}_effect'] = correlation
+            
+        return lag_effects
+
+    def _get_technical_signals(self, price_data: pd.DataFrame) -> Dict[str, str]:
+        """Get technical analysis signals"""
+        signals = {}
+        
+        # RSI signals
+        if 'RSI' in price_data.columns:
+            rsi = price_data['RSI'].iloc[-1]
+            signals['RSI'] = 'Oversold' if rsi < 30 else 'Overbought' if rsi > 70 else 'Neutral'
+        
+        # Moving average signals
+        if 'MA20' in price_data.columns and 'MA50' in price_data.columns:
+            ma20 = price_data['MA20'].iloc[-1]
+            ma50 = price_data['MA50'].iloc[-1]
+            signals['MA_Cross'] = 'Bullish' if ma20 > ma50 else 'Bearish'
+        
+        # MACD signals
+        if 'MACD' in price_data.columns and 'Signal_Line' in price_data.columns:
+            macd = price_data['MACD'].iloc[-1]
+            signal = price_data['Signal_Line'].iloc[-1]
+            signals['MACD'] = 'Bullish' if macd > signal else 'Bearish'
+        
+        return signals
 
     def get_market_context(self, 
                           symbol: str, 
