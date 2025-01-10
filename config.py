@@ -173,7 +173,24 @@ class Config:
         'bollinger_window': 20,
         'bollinger_std': 2
     }
-
+# Add after TECHNICAL_PARAMS
+# Visualization Configuration
+    VIZ_CONFIG = {
+        'theme': 'plotly_white',
+        'colors': {
+            'primary': '#1f77b4',  # Blue
+            'secondary': '#ff7f0e',  # Orange
+            'positive': '#2ca02c',  # Green
+            'negative': '#d62728',  # Red
+            'neutral': '#7f7f7f',   # Gray
+            'confidence': 'rgba(128, 128, 128, 0.2)'  # Light gray for confidence intervals
+        },
+        'plot_height': 600,
+        'plot_width': 1000,
+        'font_size': 12,
+        'title_size': 18,
+        'grid': True
+    }
 # Model Descriptions
 MODEL_DESCRIPTIONS = {
     'Prophet': {
