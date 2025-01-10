@@ -10,18 +10,21 @@ from data_fetchers import (
     EconomicIndicators,
     RealEstateIndicators,
     GDELTDataFetcher,
-    IntegratedDataFetcher
+    IntegratedDataFetcher,
 )
 from forecasting import Forecasting
 
 
 def display_footer():
     """Display the application footer"""
-    st.markdown("""
+    st.markdown(
+        """
         <div style='text-align: center; padding: 10px;'>
             <p>© 2025 AvaResearch LLC. All rights reserved.</p>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def handle_error(error: Exception, context: str = ""):
@@ -73,27 +76,30 @@ def main():
         st.set_page_config(
             page_title="HummingBird v2",
             page_icon="🐦",
-            layout="wide"
+            layout="wide",
         )
 
         # Initialize session state
         initialize_session_state()
 
         # Branding
-        st.markdown("""
+        st.markdown(
+            """
             <div style='text-align: center;'>
                 <h1>🐦 HummingBird v2</h1>
                 <p><i>Digital Asset Stock Forecasting with Economic and Market Sentiment Indicators</i></p>
                 <p>AvaResearch LLC - A Black Collar Production</p>
             </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
 
         # Sidebar - Model selection
         st.sidebar.header("🔮 Select Forecasting Model")
         selected_model = st.sidebar.selectbox(
             "Choose a forecasting model:",
             options=list(MODEL_DESCRIPTIONS.keys()),
-            format_func=lambda x: f"{x}: {MODEL_DESCRIPTIONS[x]}"
+            format_func=lambda x: f"{x}: {MODEL_DESCRIPTIONS[x]}",
         )
 
         # Sidebar - Forecasting parameters
@@ -109,21 +115,21 @@ def main():
         include_market_context = st.sidebar.checkbox("Include Market Context", value=True)
 
         if validate_inputs(symbol, forecast_period, asset_type):
-            # Use IntegratedDataFetcher to get all required data
+            # Fetch all required data
             data = st.session_state.integrated_fetcher.fetch_all_data(
                 symbol,
                 asset_type,
                 include_sentiment=include_sentiment,
-                include_economic=include_economic
+                include_economic=include_economic,
             )
 
             if not data:
                 st.error("No data available for the selected symbol.")
                 return
 
-            historical_data = data.get('price')
-            sentiment_data = data.get('sentiment')
-            economic_data = {k: v for k, v in data.items() if k.startswith('economic_')}
+            historical_data = data.get("price")
+            sentiment_data = data.get("sentiment")
+            economic_data = {k: v for k, v in data.items() if k.startswith("economic_")}
 
             # Display historical data overview
             st.header("📊 Historical Data Overview")
@@ -132,9 +138,7 @@ def main():
             # Display market context if enabled
             if include_market_context:
                 context = st.session_state.integrated_fetcher.get_enhanced_market_context(
-                    symbol,
-                    asset_type,
-                    sentiment_data
+                    symbol, asset_type, sentiment_data
                 )
                 st.header("🌍 Market Context")
                 for key, value in context.items():
@@ -147,16 +151,12 @@ def main():
 
             # Prepare data for Prophet
             prophet_data = st.session_state.integrated_fetcher.prepare_prophet_data(
-                historical_data,
-                sentiment_data,
-                economic_data
+                historical_data, sentiment_data, economic_data
             )
 
             # Generate forecast
             forecast_df, error = st.session_state.forecaster.prophet_forecast(
-                prophet_data,
-                forecast_period,
-                sentiment_data=sentiment_data
+                prophet_data, forecast_period, sentiment_data=sentiment_data
             )
 
             if error:
@@ -165,11 +165,7 @@ def main():
 
             # Display forecast plot
             forecast_plot = st.session_state.forecaster.create_forecast_plot(
-                historical_data,
-                forecast_df,
-                selected_model,
-                symbol,
-                sentiment_data
+                historical_data, forecast_df, selected_model, symbol, sentiment_data
             )
             st.plotly_chart(forecast_plot, use_container_width=True)
 
@@ -178,11 +174,7 @@ def main():
 
             with tab1:
                 st.session_state.forecaster.display_metrics(
-                    historical_data,
-                    forecast_df,
-                    asset_type,
-                    symbol,
-                    sentiment_data
+                    historical_data, forecast_df, asset_type, symbol, sentiment_data
                 )
 
             with tab2:
@@ -196,27 +188,15 @@ def main():
 
             with tab4:
                 if include_economic and economic_data:
-                    for indicator in Config.ECONOMIC_CONFIG['indicators']:
+                    for indicator in Config.ECONOMIC_CONFIG["indicators"]:
                         st.session_state.forecaster.display_economic_indicators(
-                            economic_data.get(f'economic_{indicator}'),
+                            economic_data.get(f"economic_{indicator}"),
                             indicator,
                             st.session_state.economic_indicators,
-                            sentiment_data
+                            sentiment_data,
                         )
                 else:
                     st.info("Enable economic indicators in the sidebar to view this section.")
-
-            # Display accuracy metrics
-            accuracy_metrics = st.session_state.forecaster.calculate_accuracy(
-                historical_data['Close'],
-                forecast_df['yhat'][-len(historical_data):]
-            )
-            
-            st.header("📈 Forecast Accuracy")
-            metrics_cols = st.columns(len(accuracy_metrics))
-            for col, (metric, value) in zip(metrics_cols, accuracy_metrics.items()):
-                with col:
-                    st.metric(metric, f"{value:.2f}")
 
     except Exception as e:
         handle_error(e, "main application logic")
@@ -227,168 +207,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    def main():
-    try:
-        # Page configuration
-        st.set_page_config(
-            page_title="HummingBird v2",
-            page_icon="🐦",
-            layout="wide"
-        )
-
-        # Initialize session state
-        initialize_session_state()
-
-        # Branding
-        st.markdown("""
-            <div style='text-align: center;'>
-                <h1>🐦 HummingBird v2</h1>
-                <p><i>Digital Asset Stock Forecasting with Economic and Market Sentiment Indicators</i></p>
-                <p>AvaResearch LLC - A Black Collar Production</p>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Sidebar - Model selection
-        st.sidebar.header("🔮 Select Forecasting Model")
-        selected_model = st.sidebar.selectbox(
-            "Choose a forecasting model:",
-            options=list(MODEL_DESCRIPTIONS.keys()),
-            format_func=lambda x: f"{x}: {MODEL_DESCRIPTIONS[x]['name']}"
-        )
-
-        # Show model details in expander
-        with st.sidebar.expander("Model Details", expanded=False):
-            st.write(MODEL_DESCRIPTIONS[selected_model]['description'])
-
-        # Sidebar - Forecasting parameters
-        st.sidebar.header("🔧 Forecast Parameters")
-        symbol = st.sidebar.text_input(
-            "Enter the symbol:",
-            value=Config.DEFAULT_TICKER
-        ).upper()
-        asset_type = st.sidebar.selectbox("Asset Type:", Config.ASSET_TYPES)
-        forecast_period = st.sidebar.slider("Forecast Period (days):", 7, 90, 30)
-
-        # Additional options
-        st.sidebar.header("📊 Additional Indicators")
-        include_sentiment = st.sidebar.checkbox("Include Sentiment Analysis", value=True)
-        include_economic = st.sidebar.checkbox("Include Economic Indicators", value=True)
-        include_market_context = st.sidebar.checkbox("Include Market Context", value=True)
-
-        # Advanced visualization options
-        with st.sidebar.expander("Advanced Options", expanded=False):
-            show_confidence = st.checkbox("Show Confidence Intervals", value=True)
-            show_volume = st.checkbox("Show Volume Analysis", value=True)
-            show_patterns = st.checkbox("Show Price Patterns", value=True)
-            show_trend = st.checkbox("Show Trend Analysis", value=True)
-
-        if validate_inputs(symbol, forecast_period, asset_type):
-            with st.spinner('Fetching market data...'):
-                data = st.session_state.integrated_fetcher.fetch_all_data(
-                    symbol,
-                    asset_type,
-                    include_sentiment=include_sentiment,
-                    include_economic=include_economic
-                )
-
-            if not data:
-                st.error("No data available for the selected symbol.")
-                return
-
-            historical_data = data.get('price')
-            sentiment_data = data.get('sentiment')
-            economic_data = {k: v for k, v in data.items() if k.startswith('economic_')}
-
-            # Display market overview
-            display_market_overview(historical_data, symbol)
-
-            # Display technical analysis components based on user selection
-            if show_patterns:
-                display_price_patterns(historical_data, symbol)
-
-            if show_volume:
-                display_volume_analysis(historical_data, symbol)
-
-            if show_trend:
-                trend_strength = display_trend_analysis(historical_data, symbol)
-
-            # Display historical data table in expander
-            with st.expander("View Historical Data", expanded=False):
-                st.dataframe(historical_data.tail(10))
-
-            # Display market context if enabled
-            if include_market_context:
-                context = st.session_state.integrated_fetcher.get_enhanced_market_context(
-                    symbol,
-                    asset_type,
-                    sentiment_data
-                )
-                st.header("🌍 Market Context")
-                
-                context_cols = st.columns(3)
-                for i, (key, value) in enumerate(context.items()):
-                    with context_cols[i % 3]:
-                        if isinstance(value, dict):
-                            st.write(f"**{key.replace('_', ' ').title()}**")
-                            for subkey, subvalue in value.items():
-                                st.write(f"- {subkey.replace('_', ' ').title()}: {subvalue}")
-                        else:
-                            st.metric(
-                                key.replace('_', ' ').title(),
-                                value if isinstance(value, str) else f"{value:.2f}"
-                            )
-
-            # Generate forecast
-            with st.spinner('Generating forecast...'):
-                prophet_data = st.session_state.integrated_fetcher.prepare_prophet_data(
-                    historical_data,
-                    sentiment_data,
-                    economic_data
-                )
-
-                forecast_df, error = st.session_state.forecaster.prophet_forecast(
-                    prophet_data,
-                    forecast_period,
-                    sentiment_data=sentiment_data,
-                    economic_data=next(iter(economic_data.values())) if economic_data else None
-                )
-
-            if error:
-                st.error(f"Error generating forecast: {error}")
-                return
-
-            # Display forecast plot
-            st.header("🔮 Forecast Results")
-            forecast_plot = st.session_state.forecaster.create_forecast_plot(
-                historical_data,
-                forecast_df,
-                selected_model,
-                symbol,
-                sentiment_data if include_sentiment else None
-            )
-
-            # Handle confidence interval display
-            if not show_confidence:
-                forecast_plot.data = [trace for trace in forecast_plot.data 
-                                    if 'Confidence' not in trace.name]
-
-            st.plotly_chart(forecast_plot, use_container_width=True)
-
-            # Display analysis tabs
-            tab1, tab2, tab3, tab4 = st.tabs(["Metrics", "Components", "Sentiment", "Economic"])
-
-            with tab1:
-                st.session_state.forecaster.display_metrics(
-                    historical_data,
-                    forecast_df,
-                    asset_type,
-                    symbol,
-                    sentiment_data if include_sentiment else None
-                )
-
-            with tab2:
-                st.session_state.forecaster.display_components(forecast_df)
-
-            with tab3:
-                if include_sentiment and sentiment_data is not None:
-                    st.session_state.forecaster.display_sentiment_analysis(sentiment_data
