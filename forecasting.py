@@ -1,5 +1,5 @@
 """
-HummingBird v2 Forecasting Module
+HummingBird v2dev Forecasting Module
 Handles all forecasting operations including predictions, visualization, and analysis.
 """
 
