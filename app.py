@@ -6,9 +6,7 @@ import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import (
     AssetDataFetcher,
-    EconomicIndicators,
-    GDELTDataFetcher,
-    IntegratedDataFetcher
+    EconomicIndicators
 )
 from forecasting import Forecasting
 
@@ -55,8 +53,6 @@ def initialize_session_state():
     """Initialize or reset session state variables"""
     if "economic_indicators" not in st.session_state:
         st.session_state.economic_indicators = EconomicIndicators()
-    if "integrated_data_fetcher" not in st.session_state:
-        st.session_state.integrated_data_fetcher = IntegratedDataFetcher()
     if "forecaster" not in st.session_state:
         st.session_state.forecaster = Forecasting()
 
@@ -98,7 +94,6 @@ def main():
 
         # Additional options
         st.sidebar.header("📊 Additional Indicators")
-        include_sentiment = st.sidebar.checkbox("Include Sentiment Analysis", value=True)
         include_economic = st.sidebar.checkbox("Include Economic Indicators", value=True)
 
         if validate_inputs(symbol, forecast_period, asset_type):
@@ -106,9 +101,7 @@ def main():
             fetcher = AssetDataFetcher(asset_type, symbol)
             historical_data = fetcher.get_historical_data()
 
-            # Get additional data
-            gdelt_fetcher = GDELTDataFetcher(symbol)
-            sentiment_data = gdelt_fetcher.get_sentiment_data() if include_sentiment else None
+            # Get economic data
             economic_data = st.session_state.economic_indicators.get_indicators() if include_economic else None
 
             # Display historical data overview
@@ -120,8 +113,7 @@ def main():
             forecast_df, error = st.session_state.forecaster.prophet_forecast(
                 historical_data, 
                 forecast_period,
-                sentiment_data,
-                economic_data
+                economic_data=economic_data
             )
 
             if error:
@@ -133,8 +125,7 @@ def main():
                 historical_data,
                 forecast_df,
                 selected_model,
-                symbol,
-                sentiment_data
+                symbol
             )
             st.plotly_chart(forecast_plot, use_container_width=True)
 
@@ -143,30 +134,22 @@ def main():
                 historical_data,
                 forecast_df,
                 asset_type,
-                symbol,
-                sentiment_data
+                symbol
             )
 
             # Create tabs for additional analysis
-            tab1, tab2, tab3 = st.tabs(["Components", "Sentiment", "Economic"])
+            tab1, tab2 = st.tabs(["Components", "Economic"])
 
             with tab1:
                 st.session_state.forecaster.display_components(forecast_df)
 
             with tab2:
-                if include_sentiment and sentiment_data is not None:
-                    st.session_state.forecaster.display_sentiment_analysis(sentiment_data)
-                else:
-                    st.info("Enable sentiment analysis in the sidebar to view this section.")
-
-            with tab3:
                 if include_economic and economic_data is not None:
                     for indicator in Config.ECONOMIC_CONFIG['indicators']:
                         st.session_state.forecaster.display_economic_indicators(
                             economic_data,
                             indicator,
-                            st.session_state.economic_indicators,
-                            sentiment_data
+                            st.session_state.economic_indicators
                         )
                 else:
                     st.info("Enable economic indicators in the sidebar to view this section.")
