@@ -692,3 +692,69 @@ class IntegratedDataFetcher:
             # MACD signals
             if 'MACD' in price_data.columns and 'Signal_Line' in price_data.columns:
                 macd = price_data['MACD'].iloc[-1]
+                # MACD signals
+            if 'MACD' in price_data.columns and 'Signal_Line' in price_data.columns:
+                macd = price_data['MACD'].iloc[-1]
+                signal = price_data['Signal_Line'].iloc[-1]
+                signals['MACD'] = 'Bullish' if macd > signal else 'Bearish'
+                signals['MACD_Value'] = f"{macd:.2f}"
+            
+            # Bollinger Bands
+            if 'BB_Upper' in price_data.columns and 'BB_Lower' in price_data.columns:
+                close = price_data['Close'].iloc[-1]
+                upper = price_data['BB_Upper'].iloc[-1]
+                lower = price_data['BB_Lower'].iloc[-1]
+                bb_position = (close - lower) / (upper - lower) if (upper - lower) != 0 else 0.5
+                signals['BB_Position'] = f"{bb_position:.2f}"
+                signals['BB_Signal'] = 'Overbought' if bb_position > 0.8 else 'Oversold' if bb_position < 0.2 else 'Neutral'
+            
+            # Trend Strength
+            if 'Trend' in price_data.columns:
+                trend = price_data['Trend'].iloc[-1]
+                signals['Trend_Direction'] = 'Uptrend' if trend == 1 else 'Downtrend' if trend == -1 else 'Sideways'
+            
+            # Volatility
+            if 'Volatility' in price_data.columns:
+                volatility = price_data['Volatility'].iloc[-1]
+                signals['Volatility'] = f"{(volatility * 100):.2f}%"
+                signals['Volatility_Level'] = 'High' if volatility > 0.02 else 'Low' if volatility < 0.01 else 'Medium'
+            
+            # Support and Resistance
+            if 'Support' in price_data.columns and 'Resistance' in price_data.columns:
+                close = price_data['Close'].iloc[-1]
+                support = price_data['Support'].iloc[-1]
+                resistance = price_data['Resistance'].iloc[-1]
+                signals['Support_Level'] = f"{support:.2f}"
+                signals['Resistance_Level'] = f"{resistance:.2f}"
+                signals['Price_Position'] = f"{((close - support) / (resistance - support) * 100):.2f}%" if (resistance - support) != 0 else "N/A"
+            
+            # Overall Signal
+            bullish_count = sum(1 for signal in signals.values() if 'Bullish' in str(signal) or 'Uptrend' in str(signal))
+            bearish_count = sum(1 for signal in signals.values() if 'Bearish' in str(signal) or 'Downtrend' in str(signal))
+            signals['Overall_Signal'] = ('Strongly Bullish' if bullish_count >= 3 else
+                                       'Strongly Bearish' if bearish_count >= 3 else
+                                       'Bullish' if bullish_count > bearish_count else
+                                       'Bearish' if bearish_count > bullish_count else
+                                       'Neutral')
+            
+            return signals
+            
+        except Exception as e:
+            st.warning(f"Error calculating technical signals: {str(e)}")
+            return {'error': str(e)}
+
+    @staticmethod
+    def _calculate_correlation(series1: pd.Series, series2: pd.Series) -> float:
+        """Calculate correlation between two price series"""
+        return series1.pct_change().corr(series2.pct_change())
+
+    @staticmethod
+    def _calculate_beta(market_returns: pd.Series, asset_returns: pd.Series) -> float:
+        """Calculate beta of an asset against the market"""
+        market_change = market_returns.pct_change()
+        asset_change = asset_returns.pct_change()
+        
+        covariance = market_change.cov(asset_change)
+        market_variance = market_change.var()
+        
+        return covariance / market_variance if market_variance != 0 else 0
