@@ -1,5 +1,5 @@
 """
-Handles all forecasting operations includings predictions, visualization, and analysis.
+Handles all forecasting operations including predictions, visualization, and analysis.
 """
 
 import pandas as pd
@@ -9,6 +9,7 @@ from prophet import Prophet
 from typing import Optional, Tuple, Dict
 import numpy as np
 from config import Config
+
 
 class Forecasting:
     """Class to handle all forecasting operations"""
@@ -225,7 +226,7 @@ class Forecasting:
                     "Market Sentiment",
                     f"{sentiment:.2f}",
                     f"{'Improving' if sentiment_change > 0 else 'Declining'}",
-                    delta_color='normal' if sentiment_change >= 0 else 'inverse'
+                    delta_color='normal' if sentiment_change > 0 else 'inverse'
                 )
             else:
                 st.metric("Forecast Period", f"{len(forecast) - len(data)} days")
@@ -393,27 +394,7 @@ class Forecasting:
                     f"{'Positive' if current_sentiment > 0 else 'Negative'}",
                     delta_color='normal' if current_sentiment > 0 else 'inverse'
                 )
-            
-            with col2:
-                sentiment_ma5 
-                @staticmethod
-    def display_sentiment_analysis(sentiment_data: pd.DataFrame):
-        """Display sentiment analysis visualization and metrics"""
-        if sentiment_data is not None and not sentiment_data.empty:
-            st.subheader("🌐 Market Sentiment Analysis")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                current_sentiment = sentiment_data['market_sentiment'].iloc[-1]
-                st.metric(
-                    "Current Sentiment",
-                    f"{current_sentiment:.2f}",
-                    f"{'Positive' if current_sentiment > 0 else 'Negative'}",
-                    delta_color='normal' if current_sentiment > 0 else 'inverse'
-                )
-            
-            with col2:
+                with col2:
                 sentiment_ma5 = sentiment_data['sentiment_ma5'].iloc[-1]
                 trend = "Improving" if current_sentiment > sentiment_ma5 else "Declining"
                 st.metric(
