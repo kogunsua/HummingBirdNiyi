@@ -1,3 +1,8 @@
+"""
+HummingBird v2 Forecasting Module
+Handles all forecasting operations including predictions, visualization, and analysis.
+"""
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -222,20 +227,21 @@ def display_components(forecast: pd.DataFrame):
                           or col in ['sentiment', 'regressor']]
         
         for regressor in extra_regressors:
-            fig_regressor = go.Figure()
-            fig_regressor.add_trace(go.Scatter(
-                x=forecast['ds'],
-                y=forecast[regressor],
-                name=regressor.capitalize()
-            ))
-            fig_regressor.update_layout(
-                title=f"{regressor.capitalize()} Impact",
-                xaxis_title="Date",
-                yaxis_title="Effect",
-                template="plotly_white"
-            )
-            st.plotly_chart(fig_regressor, use_container_width=True)
-            def display_metrics(data: pd.DataFrame, 
+            if regressor in forecast.columns:
+                fig_regressor = go.Figure()
+                fig_regressor.add_trace(go.Scatter(
+                    x=forecast['ds'],
+                    y=forecast[regressor],
+                    name=regressor.capitalize()
+                ))
+                fig_regressor.update_layout(
+                    title=f"{regressor.capitalize()} Impact",
+                    xaxis_title="Date",
+                    yaxis_title="Effect",
+                    template="plotly_white"
+                )
+                st.plotly_chart(fig_regressor, use_container_width=True)
+                def display_metrics(data: pd.DataFrame, 
                    forecast: pd.DataFrame, 
                    asset_type: str, 
                    symbol: str,
@@ -297,8 +303,7 @@ def display_components(forecast: pd.DataFrame):
             )
         else:
             st.metric("Forecast Period", f"{len(forecast) - len(data)} days")
-
-def display_economic_indicators(economic_data: pd.DataFrame, 
+            def display_economic_indicators(economic_data: pd.DataFrame, 
                              indicator: str,
                              economic_indicators,
                              sentiment_data: Optional[pd.DataFrame] = None):
@@ -364,14 +369,12 @@ def display_economic_indicators(economic_data: pd.DataFrame,
         # Show detailed statistics
         with st.expander("View Detailed Statistics"):
             stats_df = pd.DataFrame({
-            stats_df = pd.DataFrame({
                 'Metric': stats.keys(),
                 'Value': [f"{v:.2f}" if isinstance(v, (float, np.floating)) else str(v)
                          for v in stats.values()]
             })
             st.dataframe(stats_df)
-
-def display_sentiment_analysis(sentiment_data: pd.DataFrame):
+            def display_sentiment_analysis(sentiment_data: pd.DataFrame):
     """Display sentiment analysis"""
     if sentiment_data is not None and not sentiment_data.empty:
         st.subheader("🌐 Market Sentiment Analysis")
@@ -474,4 +477,3 @@ def display_sentiment_analysis(sentiment_data: pd.DataFrame):
             })
             
             st.dataframe(metrics_df)
-        
