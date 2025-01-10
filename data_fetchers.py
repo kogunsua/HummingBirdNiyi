@@ -213,7 +213,7 @@ class EconomicIndicators:
                 df.columns = ['date', 'value']
             else:
                 data = self.fred.get_series(
-                    indicator,
+                    self.indicator_details[indicator]['series_id'],
                     observation_start=Config.START,
                     observation_end=Config.TODAY
                 )
@@ -340,10 +340,10 @@ class GDELTDataFetcher:
                     url = f"{self.config['gkg_base_url']}{filename}"
                     
                     df = pd.read_csv(url, compression='zip',
-                                   names=self._
-                                names=self._get_gkg_columns(),
+                                   names=self._get_gkg_columns(),
                                    sep='\t',
                                    usecols=self.config['required_columns']['gkg'])
+                    all_data
                     all_data.append(df)
                     
                 except Exception:
@@ -630,7 +630,6 @@ class IntegratedDataFetcher:
                         else self.asset_fetcher.get_crypto_data(symbol)
             
             if price_data is not None:
-                # Calculate sentiment impact metrics
                 context.update({
                     'sentiment_correlation': self._calculate_sentiment_correlation(
                         price_data['Close'],
@@ -676,18 +675,20 @@ class IntegratedDataFetcher:
         """Get technical analysis signals"""
         signals = {}
         
-        # RSI signals
-        if 'RSI' in price_data.columns:
-            rsi = price_data['RSI'].iloc[-1]
-            signals['RSI'] = 'Oversold' if rsi < 30 else 'Overbought' if rsi > 70 else 'Neutral'
-        
-        # Moving average signals
-        if 'MA20' in price_data.columns and 'MA50' in price_data.columns:
-            ma20 = price_data['MA20'].iloc[-1]
-            ma50 = price_data['MA50'].iloc[-1]
-            signals['MA_Cross'] = 'Bullish' if ma20 > ma50 else 'Bearish'
-        
-        # MACD signals
-        if 'MACD' in price_data.columns and 'Signal_Line' in price_data.columns:
-            macd = price_data['MACD'].iloc[-1]
-            signal
+        try:
+            # RSI signals
+            if 'RSI' in price_data.columns:
+                rsi = price_data['RSI'].iloc[-1]
+                signals['RSI'] = 'Oversold' if rsi < 30 else 'Overbought' if rsi > 70 else 'Neutral'
+                signals['RSI_Value'] = f"{rsi:.2f}"
+            
+            # Moving average signals
+            if 'MA20' in price_data.columns and 'MA50' in price_data.columns:
+                ma20 = price_data['MA20'].iloc[-1]
+                ma50 = price_data['MA50'].iloc[-1]
+                signals['MA_Cross'] = 'Bullish' if ma20 > ma50 else 'Bearish'
+                signals['MA_Gap'] = f"{((ma20 - ma50) / ma50 * 100):.2f}%"
+            
+            # MACD signals
+            if 'MACD' in price_data.columns and 'Signal_Line' in price_data.columns:
+                macd = price_data['MACD'].iloc[-1]
