@@ -1,12 +1,34 @@
-# forecasting.py
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from prophet import Prophet
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 import numpy as np
 from config import Config
+
+def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, float]:
+    """Calculate accuracy metrics for the forecast"""
+    try:
+        # Make sure we only compare overlapping dates
+        actual = actual[-len(predicted):]
+        
+        # Mean Absolute Percentage Error (MAPE)
+        mape = np.mean(np.abs((actual - predicted) / actual)) * 100
+        
+        # Root Mean Square Error (RMSE)
+        rmse = np.sqrt(np.mean((actual - predicted) ** 2))
+        
+        # R-squared (R²)
+        r2 = 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - actual.mean()) ** 2))
+        
+        return {
+            'MAPE (%)': mape,
+            'RMSE': rmse,
+            'R²': r2
+        }
+    except Exception as e:
+        st.error(f"Error calculating accuracy metrics: {str(e)}")
+        return {}
 
 def prophet_forecast(data: pd.DataFrame, 
                     periods: int, 
@@ -29,7 +51,7 @@ def prophet_forecast(data: pd.DataFrame,
             sentiment_df = sentiment_data.copy()
             sentiment_df.columns = ['ds', 'sentiment']
             sentiment_df['ds'] = pd.to_datetime(sentiment_df['ds']).tz_localize(None)
-            model.add_regressor('sentiment', mode=Config.PROPHET_CONFIG['regressors']['sentiment']['mode'])
+            model.add_regressor('sentiment', mode='multiplicative')
             df = df.merge(sentiment_df, on='ds', how='left')
             df['sentiment'].fillna(method='ffill', inplace=True)
         
@@ -38,7 +60,7 @@ def prophet_forecast(data: pd.DataFrame,
             economic_df = economic_data.copy()
             economic_df.columns = ['ds', 'regressor']
             economic_df['ds'] = pd.to_datetime(economic_df['ds']).tz_localize(None)
-            model.add_regressor('regressor', mode=Config.PROPHET_CONFIG['regressors']['economic']['mode'])
+            model.add_regressor('regressor', mode='multiplicative')
             df = df.merge(economic_df, on='ds', how='left')
             df['regressor'].fillna(method='ffill', inplace=True)
         
@@ -63,8 +85,7 @@ def prophet_forecast(data: pd.DataFrame,
     
     except Exception as e:
         return None, str(e)
-
-def create_forecast_plot(data: pd.DataFrame, 
+        def create_forecast_plot(data: pd.DataFrame, 
                        forecast: pd.DataFrame, 
                        model_name: str, 
                        symbol: str,
@@ -138,7 +159,83 @@ def create_forecast_plot(data: pd.DataFrame,
     fig.update_layout(layout)
     return fig
 
-def display_metrics(data: pd.DataFrame, 
+def display_components(forecast: pd.DataFrame):
+    """Display forecast components"""
+    st.subheader("📊 Forecast Components")
+    
+    # Create tabs for different components
+    tab1, tab2, tab3 = st.tabs(["Trend", "Seasonality", "Additional Factors"])
+    
+    with tab1:
+        fig_trend = go.Figure()
+        fig_trend.add_trace(go.Scatter(
+            x=forecast['ds'],
+            y=forecast['trend'],
+            name='Trend'
+        ))
+        
+        fig_trend.update_layout(
+            title="Trend Component",
+            xaxis_title="Date",
+            yaxis_title="Trend Value",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    
+    with tab2:
+        # Weekly seasonality
+        if 'weekly' in forecast.columns:
+            fig_weekly = go.Figure()
+            fig_weekly.add_trace(go.Scatter(
+                x=forecast['ds'],
+                y=forecast['weekly'],
+                name='Weekly Pattern'
+            ))
+            fig_weekly.update_layout(
+                title="Weekly Seasonality",
+                xaxis_title="Date",
+                yaxis_title="Weekly Effect",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_weekly, use_container_width=True)
+        
+        # Yearly seasonality
+        if 'yearly' in forecast.columns:
+            fig_yearly = go.Figure()
+            fig_yearly.add_trace(go.Scatter(
+                x=forecast['ds'],
+                y=forecast['yearly'],
+                name='Yearly Pattern'
+            ))
+            fig_yearly.update_layout(
+                title="Yearly Seasonality",
+                xaxis_title="Date",
+                yaxis_title="Yearly Effect",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_yearly, use_container_width=True)
+    
+    with tab3:
+        # Display additional regressors if available
+        extra_regressors = [col for col in forecast.columns 
+                          if col.endswith('_regressor') 
+                          or col in ['sentiment', 'regressor']]
+        
+        for regressor in extra_regressors:
+            fig_regressor = go.Figure()
+            fig_regressor.add_trace(go.Scatter(
+                x=forecast['ds'],
+                y=forecast[regressor],
+                name=regressor.capitalize()
+            ))
+            fig_regressor.update_layout(
+                title=f"{regressor.capitalize()} Impact",
+                xaxis_title="Date",
+                yaxis_title="Effect",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig_regressor, use_container_width=True)
+            def display_metrics(data: pd.DataFrame, 
                    forecast: pd.DataFrame, 
                    asset_type: str, 
                    symbol: str,
@@ -267,6 +364,7 @@ def display_economic_indicators(economic_data: pd.DataFrame,
         # Show detailed statistics
         with st.expander("View Detailed Statistics"):
             stats_df = pd.DataFrame({
+            stats_df = pd.DataFrame({
                 'Metric': stats.keys(),
                 'Value': [f"{v:.2f}" if isinstance(v, (float, np.floating)) else str(v)
                          for v in stats.values()]
@@ -328,12 +426,13 @@ def display_sentiment_analysis(sentiment_data: pd.DataFrame):
             line=dict(color='blue', dash='dot')
         ))
         
-        fig.add_trace(go.Scatter(
-            x=sentiment_data.index,
-            y=sentiment_data['sentiment_ma20'],
-            name='20-Day MA',
-            line=dict(color='orange', dash='dot')
-        ))
+        if 'sentiment_ma20' in sentiment_data.columns:
+            fig.add_trace(go.Scatter(
+                x=sentiment_data.index,
+                y=sentiment_data['sentiment_ma20'],
+                name='20-Day MA',
+                line=dict(color='orange', dash='dot')
+            ))
         
         # Add reference lines
         fig.add_hline(y=0.2, line_dash="dash", line_color="green", annotation_text="Positive Zone")
@@ -352,9 +451,7 @@ def display_sentiment_analysis(sentiment_data: pd.DataFrame):
         st.plotly_chart(fig, use_container_width=True)
         
         # Display detailed sentiment metrics
-        if st.checkbox("Show Detailed Sentiment Metrics"):
-            st.write("### Detailed Sentiment Metrics")
-            
+        with st.expander("View Detailed Sentiment Metrics"):
             metrics_df = pd.DataFrame({
                 'Metric': [
                     'Current Sentiment',
@@ -377,18 +474,4 @@ def display_sentiment_analysis(sentiment_data: pd.DataFrame):
             })
             
             st.dataframe(metrics_df)
-
-def display_components(forecast: pd.DataFrame):
-    """Display forecast components"""
-    st.subheader("Forecast Components")
-    
-    # Create tabs for different components
-    tab1, tab2, tab3 = st.tabs(["Trend", "Seasonality", "Additional Factors"])
-    
-    with tab1:
-        fig_trend = go.Figure()
-        fig_trend.add_trace(go.Scatter(
-            x=forecast['ds'],
-            y=forecast['trend'],
-            name='Trend'
-        ))
+        
