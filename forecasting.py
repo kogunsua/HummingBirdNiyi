@@ -15,21 +15,14 @@ class Forecasting:
     
     def __init__(self):
         pass
-    
+
     @staticmethod
     def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, float]:
         """Calculate accuracy metrics for the forecast"""
         try:
-            # Make sure we only compare overlapping dates
             actual = actual[-len(predicted):]
-            
-            # Mean Absolute Percentage Error (MAPE)
             mape = np.mean(np.abs((actual - predicted) / actual)) * 100
-            
-            # Root Mean Square Error (RMSE)
             rmse = np.sqrt(np.mean((actual - predicted) ** 2))
-            
-            # R-squared (R²)
             r2 = 1 - (np.sum((actual - predicted) ** 2) / np.sum((actual - actual.mean()) ** 2))
             
             return {
@@ -48,6 +41,7 @@ class Forecasting:
                         economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         """Generate forecasts using Prophet with sentiment and economic indicators"""
         try:
+            # Prepare data for Prophet
             df = data.reset_index()
             df = df[['Date', 'Close']]
             df.columns = ['ds', 'y']
@@ -55,7 +49,7 @@ class Forecasting:
             # Ensure no timezone info
             df['ds'] = pd.to_datetime(df['ds']).tz_localize(None)
             
-            # Initialize Prophet with configuration
+            # Initialize Prophet
             model = Prophet(**Config.PROPHET_CONFIG)
             
             # Add sentiment regressor if available
@@ -76,10 +70,8 @@ class Forecasting:
                 df = df.merge(economic_df, on='ds', how='left')
                 df['regressor'].fillna(method='ffill', inplace=True)
             
-            # Fit model
+            # Fit model and make future dataframe
             model.fit(df)
-            
-            # Create future dataframe
             future = model.make_future_dataframe(periods=periods)
             
             # Add regressors to future dataframe
@@ -116,7 +108,7 @@ class Forecasting:
             line=dict(color='blue')
         ))
 
-        # Add forecast
+        # Add forecast line
         fig.add_trace(go.Scatter(
             x=forecast['ds'],
             y=forecast['yhat'],
@@ -243,7 +235,6 @@ class Forecasting:
         """Display forecast components"""
         st.subheader("📊 Forecast Components")
         
-        # Create tabs for different components
         tab1, tab2, tab3 = st.tabs(["Trend", "Seasonality", "Additional Factors"])
         
         with tab1:
@@ -296,7 +287,6 @@ class Forecasting:
                 st.plotly_chart(fig_yearly, use_container_width=True)
         
         with tab3:
-            # Display additional regressors if available
             extra_regressors = [col for col in forecast.columns 
                               if col.endswith('_regressor') 
                               or col in ['sentiment', 'regressor']]
@@ -329,7 +319,6 @@ class Forecasting:
             
             st.subheader(f"📈 {indicator_info.get('description', indicator)}")
             
-            # Display metrics
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.markdown(f"**Frequency:** {indicator_info.get('frequency', 'N/A')}")
@@ -343,10 +332,8 @@ class Forecasting:
                         delta_color='normal' if stats['trend'] == 'Upward' else 'inverse'
                     )
 
-            # Create visualization
             fig = go.Figure()
             
-            # Add indicator line
             fig.add_trace(go.Scatter(
                 x=economic_data['date'],
                 y=economic_data['value'],
@@ -354,7 +341,6 @@ class Forecasting:
                 line=dict(color='blue')
             ))
             
-            # Add sentiment overlay if available
             if sentiment_data is not None and indicator in ['POLSENT', 'MARKETSENT']:
                 fig.add_trace(go.Scatter(
                     x=sentiment_data.index,
@@ -373,7 +359,6 @@ class Forecasting:
                     )
                 )
             
-            # Update layout
             fig.update_layout(
                 title=f"{indicator_info.get('description', indicator)} ({indicator_info.get('units', '')})",
                 xaxis_title="Date",
@@ -384,7 +369,6 @@ class Forecasting:
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Show detailed statistics
             with st.expander("View Detailed Statistics"):
                 stats_df = pd.DataFrame({
                     'Metric': stats.keys(),
@@ -394,4 +378,123 @@ class Forecasting:
                 st.dataframe(stats_df)
 
     @staticmethod
-    def display_sentiment_analysis(sentiment_data: pd.
+    def display_sentiment_analysis(sentiment_data: pd.DataFrame):
+        """Display sentiment analysis visualization and metrics"""
+        if sentiment_data is not None and not sentiment_data.empty:
+            st.subheader("🌐 Market Sentiment Analysis")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                current_sentiment = sentiment_data['market_sentiment'].iloc[-1]
+                st.metric(
+                    "Current Sentiment",
+                    f"{current_sentiment:.2f}",
+                    f"{'Positive' if current_sentiment > 0 else 'Negative'}",
+                    delta_color='normal' if current_sentiment > 0 else 'inverse'
+                )
+            
+            with col2:
+                sentiment_ma5 
+                @staticmethod
+    def display_sentiment_analysis(sentiment_data: pd.DataFrame):
+        """Display sentiment analysis visualization and metrics"""
+        if sentiment_data is not None and not sentiment_data.empty:
+            st.subheader("🌐 Market Sentiment Analysis")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                current_sentiment = sentiment_data['market_sentiment'].iloc[-1]
+                st.metric(
+                    "Current Sentiment",
+                    f"{current_sentiment:.2f}",
+                    f"{'Positive' if current_sentiment > 0 else 'Negative'}",
+                    delta_color='normal' if current_sentiment > 0 else 'inverse'
+                )
+            
+            with col2:
+                sentiment_ma5 = sentiment_data['sentiment_ma5'].iloc[-1]
+                trend = "Improving" if current_sentiment > sentiment_ma5 else "Declining"
+                st.metric(
+                    "5-Day Trend",
+                    trend,
+                    f"{abs(current_sentiment - sentiment_ma5):.2f}",
+                    delta_color='normal' if current_sentiment > sentiment_ma5 else 'inverse'
+                )
+            
+            with col3:
+                if 'sentiment_volatility' in sentiment_data.columns:
+                    volatility = sentiment_data['sentiment_volatility'].iloc[-1]
+                    st.metric(
+                        "Sentiment Volatility",
+                        f"{volatility:.2f}",
+                        "High" if volatility > 0.2 else "Low"
+                    )
+            
+            # Create sentiment visualization
+            fig = go.Figure()
+            
+            # Add sentiment line
+            fig.add_trace(go.Scatter(
+                x=sentiment_data.index,
+                y=sentiment_data['market_sentiment'],
+                name='Market Sentiment',
+                line=dict(color='purple')
+            ))
+            
+            # Add moving averages
+            fig.add_trace(go.Scatter(
+                x=sentiment_data.index,
+                y=sentiment_data['sentiment_ma5'],
+                name='5-Day MA',
+                line=dict(color='blue', dash='dot')
+            ))
+            
+            if 'sentiment_ma20' in sentiment_data.columns:
+                fig.add_trace(go.Scatter(
+                    x=sentiment_data.index,
+                    y=sentiment_data['sentiment_ma20'],
+                    name='20-Day MA',
+                    line=dict(color='orange', dash='dot')
+                ))
+            
+            # Add reference lines
+            fig.add_hline(y=0.2, line_dash="dash", line_color="green", annotation_text="Positive Zone")
+            fig.add_hline(y=-0.2, line_dash="dash", line_color="red", annotation_text="Negative Zone")
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            
+            # Update layout
+            fig.update_layout(
+                title="Market Sentiment Trend",
+                xaxis_title="Date",
+                yaxis_title="Sentiment Score",
+                template="plotly_white",
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display detailed sentiment metrics
+            with st.expander("View Detailed Sentiment Metrics"):
+                metrics_df = pd.DataFrame({
+                    'Metric': [
+                        'Current Sentiment',
+                        '5-Day MA',
+                        '20-Day MA',
+                        'Sentiment Momentum',
+                        'Theme Impact',
+                        'Volume Impact',
+                        'Trend Strength'
+                    ],
+                    'Value': [
+                        f"{sentiment_data['market_sentiment'].iloc[-1]:.2f}",
+                        f"{sentiment_data['sentiment_ma5'].iloc[-1]:.2f}",
+                        f"{sentiment_data['sentiment_ma20'].iloc[-1]:.2f}",
+                        f"{sentiment_data['sentiment_momentum'].iloc[-1]:.2f}",
+                        f"{sentiment_data['theme_impact'].iloc[-1]:.2f}",
+                        f"{sentiment_data['volume_impact'].iloc[-1]:.2f}",
+                        f"{sentiment_data['trend_strength'].iloc[-1]:.2f}"
+                    ]
+                })
+                st.dataframe(metrics_df)
