@@ -11,6 +11,7 @@ from typing import Optional, Tuple, Dict
 import numpy as np
 from config import Config
 
+
 def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, float]:
     """Calculate accuracy metrics for the forecast"""
     try:
@@ -34,8 +35,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
     except Exception as e:
         st.error(f"Error calculating accuracy metrics: {str(e)}")
         return {}
-
-def prophet_forecast(data: pd.DataFrame, 
+        def prophet_forecast(data: pd.DataFrame, 
                     periods: int, 
                     sentiment_data: Optional[pd.DataFrame] = None,
                     economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
@@ -163,8 +163,7 @@ def prophet_forecast(data: pd.DataFrame,
 
     fig.update_layout(layout)
     return fig
-
-def display_components(forecast: pd.DataFrame):
+    def display_components(forecast: pd.DataFrame):
     """Display forecast components"""
     st.subheader("📊 Forecast Components")
     
@@ -477,3 +476,4 @@ def display_components(forecast: pd.DataFrame):
             })
             
             st.dataframe(metrics_df)
+            
