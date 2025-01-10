@@ -85,9 +85,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
         
         # Generate forecast
         forecast = model.predict(future)
-        return forecast, None
-    
-    except Exception as e:
+        return forecast, None except Exception as e:
         return None, str(e)def create_forecast_plot(data: pd.DataFrame, 
                        forecast: pd.DataFrame, 
                        model_name: str, 
