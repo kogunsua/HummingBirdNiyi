@@ -3,6 +3,7 @@ Main application file for HummingBird v2
 """
 
 import streamlit as st
+import plotly.graph_objects as go
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import (
     AssetDataFetcher,
