@@ -1,26 +1,44 @@
-# config.py
 from datetime import date, timedelta
 
 class Config:
-    # Original Time configurations
+    # Time configurations
     END_DATE = date.today()
     START_DATE = END_DATE - timedelta(days=365)
     TODAY = END_DATE.strftime("%Y-%m-%d")
     START = START_DATE.strftime("%Y-%m-%d")
     CACHE_TTL = 3600
     
-    # Original Default values
+    # Default values
     DEFAULT_TICKER = "MSFT"
     DEFAULT_CRYPTO = "xrp"
     DEFAULT_PERIODS = 30
     ASSET_TYPES = ["Stocks", "Cryptocurrency"]
     
-    # Original API Keys
+    # API Keys
     FRED_API_KEY = "a81e9c33d8dbac1cc1309e51527e0d53"
     ALPHA_VANTAGE_API_KEY = "E3R1QOXBCW9924S"
     POLYGON_API_KEY = "9rP1CLlxuoRWPvkEiOMxxIwNyffjUEb4"
     
-    # Original Data Sources plus new ones
+    # Prophet Configuration
+    PROPHET_CONFIG = {
+        'yearly_seasonality': True,
+        'weekly_seasonality': True,
+        'daily_seasonality': False,
+        'changepoint_prior_scale': 0.05,
+        'seasonality_prior_scale': 10.0,
+        'holidays_prior_scale': 10.0,
+        'regressors': {
+            'sentiment': {
+                'mode': 'multiplicative',
+                'prior_scale': 10.0
+            },
+            'economic': {
+                'mode': 'multiplicative',
+                'prior_scale': 10.0
+            }
+        }
+    }
+    # Data Sources
     DATA_SOURCES = {
         # Original sources
         "Polygon.io": "Real-time and historical stock, forex, and cryptocurrency data",
@@ -34,53 +52,100 @@ class Config:
         "Alpha Vantage": "Macroeconomic data and financial market data"
     }
 
-    # Original Economic Indicators plus GDELT additions
+    # Economic Indicators
     INDICATORS = {
         # Original indicators
-        'GDP': 'Gross Domestic Product',
-        'UNRATE': 'Unemployment Rate',
-        'CPIAUCSL': 'Consumer Price Index',
-        'DFF': 'Federal Funds Rate',
-        'IEF': 'iShares 7-10 Year Treasury Bond ETF',
+        'GDP': {
+            'series_id': 'GDP',
+            'description': 'Gross Domestic Product',
+            'frequency': 'Quarterly',
+            'units': 'Billions of USD'
+        },
+        'UNRATE': {
+            'series_id': 'UNRATE',
+            'description': 'Unemployment Rate',
+            'frequency': 'Monthly',
+            'units': 'Percent'
+        },
+        'CPIAUCSL': {
+            'series_id': 'CPIAUCSL',
+            'description': 'Consumer Price Index',
+            'frequency': 'Monthly',
+            'units': 'Index 1982-1984=100'
+        },
+        'DFF': {
+            'series_id': 'DFF',
+            'description': 'Federal Funds Rate',
+            'frequency': 'Daily',
+            'units': 'Percent'
+        },
+        'IEF': {
+            'description': 'iShares 7-10 Year Treasury Bond ETF',
+            'frequency': 'Daily',
+            'units': 'USD'
+        },
         # New GDELT indicators
-        'POLSENT': 'Political Sentiment Index',
-        'MARKETSENT': 'Market Sentiment Index',
-        'GLOBALTONE': 'Global Tone Index'
+        'POLSENT': {
+            'description': 'Political Sentiment Index',
+            'frequency': 'Daily',
+            'units': 'Sentiment Score'
+        },
+        'MARKETSENT': {
+            'description': 'Market Sentiment Index',
+            'frequency': 'Daily',
+            'units': 'Sentiment Score'
+        },
+        'GLOBALTONE': {
+            'description': 'Global Tone Index',
+            'frequency': 'Daily',
+            'units': 'Tone Score'
+        }
     }
-
-    # Original Real Estate Indicators
+    # Real Estate Indicators
     REAL_ESTATE_INDICATORS = {
-        'Treasury Yields': {
-            'description': 'Treasury yield curves and rates',
-            'status': 'Under Development'
+        'MORTGAGE30US': {
+            'series_id': 'MORTGAGE30US',
+            'description': '30-Year Fixed Rate Mortgage Average',
+            'frequency': 'Weekly',
+            'units': 'Percent',
+            'source': 'FRED',
+            'status': 'Active'
         },
-        'Federal Reserve Policies': {
-            'description': 'Federal Reserve monetary policy impacts',
-            'status': 'Under Development'
+        'HOUST': {
+            'series_id': 'HOUST',
+            'description': 'Housing Starts',
+            'frequency': 'Monthly',
+            'units': 'Thousands of Units',
+            'source': 'FRED',
+            'status': 'Active'
         },
-        'Inflation': {
-            'description': 'Inflation rates and trends',
-            'status': 'Under Development'
+        'CSUSHPISA': {
+            'series_id': 'CSUSHPISA',
+            'description': 'Case-Shiller Home Price Index',
+            'frequency': 'Monthly',
+            'units': 'Index',
+            'source': 'FRED',
+            'status': 'Active'
         },
-        'Economic Growth': {
-            'description': 'GDP and economic growth metrics',
-            'status': 'Under Development'
+        'RRVRUSQ156N': {
+            'series_id': 'RRVRUSQ156N',
+            'description': 'Rental Vacancy Rate',
+            'frequency': 'Quarterly',
+            'units': 'Percent',
+            'source': 'FRED',
+            'status': 'Active'
         },
-        'Housing Market Trends': {
-            'description': 'Housing market indicators and trends',
-            'status': 'Under Development'
-        },
-        'Credit Market Conditions': {
-            'description': 'Credit market health and trends',
-            'status': 'Under Development'
-        },
-        'Global Economic Events': {
-            'description': 'Major global economic indicators',
-            'status': 'Under Development'
+        'MSACSR': {
+            'series_id': 'MSACSR',
+            'description': 'Monthly Supply of New Houses',
+            'frequency': 'Monthly',
+            'units': 'Months Supply',
+            'source': 'FRED',
+            'status': 'Active'
         }
     }
 
-    # New GDELT Configuration (Addition)
+    # GDELT Configuration
     GDELT_CONFIG = {
         "update_frequency": "15 minutes",
         "base_url": "http://data.gdeltproject.org/gdeltv2/",
@@ -99,8 +164,7 @@ class Config:
             "gkg": ["DATE", "THEMES", "TONE", "NUMARTS"]
         }
     }
-
-    # New Technical Analysis Parameters (Addition)
+    # Technical Analysis Parameters
     TECHNICAL_PARAMS = {
         'rsi_period': 14,
         'ma_short': 20,
@@ -110,7 +174,7 @@ class Config:
         'bollinger_std': 2
     }
 
-# Original Model Descriptions with enhanced details
+# Model Descriptions
 MODEL_DESCRIPTIONS = {
     'Prophet': {
         'name': 'Facebook Prophet',
@@ -167,3 +231,4 @@ MODEL_DESCRIPTIONS = {
         'development_status': 'Under Development'
     }
 }
+    
