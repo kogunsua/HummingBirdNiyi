@@ -6,7 +6,10 @@ import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import (
     AssetDataFetcher,
-    EconomicIndicators
+    EconomicIndicators,
+    RealEstateIndicators,
+    GDELTDataFetcher,
+    IntegratedDataFetcher
 )
 from forecasting import Forecasting
 
@@ -53,6 +56,12 @@ def initialize_session_state():
     """Initialize or reset session state variables"""
     if "economic_indicators" not in st.session_state:
         st.session_state.economic_indicators = EconomicIndicators()
+    if "real_estate_indicators" not in st.session_state:
+        st.session_state.real_estate_indicators = RealEstateIndicators()
+    if "integrated_fetcher" not in st.session_state:
+        st.session_state.integrated_fetcher = IntegratedDataFetcher()
+    if "gdelt_fetcher" not in st.session_state:
+        st.session_state.gdelt_fetcher = GDELTDataFetcher()
     if "forecaster" not in st.session_state:
         st.session_state.forecaster = Forecasting()
 
@@ -94,26 +103,59 @@ def main():
 
         # Additional options
         st.sidebar.header("📊 Additional Indicators")
+        include_sentiment = st.sidebar.checkbox("Include Sentiment Analysis", value=True)
         include_economic = st.sidebar.checkbox("Include Economic Indicators", value=True)
+        include_market_context = st.sidebar.checkbox("Include Market Context", value=True)
 
         if validate_inputs(symbol, forecast_period, asset_type):
-            # Data fetching
-            fetcher = AssetDataFetcher(asset_type, symbol)
-            historical_data = fetcher.get_historical_data()
+            # Use IntegratedDataFetcher to get all required data
+            data = st.session_state.integrated_fetcher.fetch_all_data(
+                symbol,
+                asset_type,
+                include_sentiment=include_sentiment,
+                include_economic=include_economic
+            )
 
-            # Get economic data
-            economic_data = st.session_state.economic_indicators.get_indicators() if include_economic else None
+            if not data:
+                st.error("No data available for the selected symbol.")
+                return
+
+            historical_data = data.get('price')
+            sentiment_data = data.get('sentiment')
+            economic_data = {k: v for k, v in data.items() if k.startswith('economic_')}
 
             # Display historical data overview
             st.header("📊 Historical Data Overview")
             st.dataframe(historical_data.tail(10))
 
-            # Forecasting
-            st.header("🔮 Forecasting Results")
+            # Display market context if enabled
+            if include_market_context:
+                context = st.session_state.integrated_fetcher.get_enhanced_market_context(
+                    symbol,
+                    asset_type,
+                    sentiment_data
+                )
+                st.header("🌍 Market Context")
+                for key, value in context.items():
+                    if isinstance(value, dict):
+                        st.write(f"**{key.replace('_', ' ').title()}**")
+                        for subkey, subvalue in value.items():
+                            st.write(f"- {subkey.replace('_', ' ').title()}: {subvalue}")
+                    else:
+                        st.write(f"**{key.replace('_', ' ').title()}**: {value}")
+
+            # Prepare data for Prophet
+            prophet_data = st.session_state.integrated_fetcher.prepare_prophet_data(
+                historical_data,
+                sentiment_data,
+                economic_data
+            )
+
+            # Generate forecast
             forecast_df, error = st.session_state.forecaster.prophet_forecast(
-                historical_data, 
+                prophet_data,
                 forecast_period,
-                economic_data=economic_data
+                sentiment_data=sentiment_data
             )
 
             if error:
@@ -125,31 +167,40 @@ def main():
                 historical_data,
                 forecast_df,
                 selected_model,
-                symbol
+                symbol,
+                sentiment_data
             )
             st.plotly_chart(forecast_plot, use_container_width=True)
 
-            # Display metrics and components
-            st.session_state.forecaster.display_metrics(
-                historical_data,
-                forecast_df,
-                asset_type,
-                symbol
-            )
-
-            # Create tabs for additional analysis
-            tab1, tab2 = st.tabs(["Components", "Economic"])
+            # Display metrics and components in tabs
+            tab1, tab2, tab3, tab4 = st.tabs(["Metrics", "Components", "Sentiment", "Economic"])
 
             with tab1:
-                st.session_state.forecaster.display_components(forecast_df)
+                st.session_state.forecaster.display_metrics(
+                    historical_data,
+                    forecast_df,
+                    asset_type,
+                    symbol,
+                    sentiment_data
+                )
 
             with tab2:
-                if include_economic and economic_data is not None:
+                st.session_state.forecaster.display_components(forecast_df)
+
+            with tab3:
+                if include_sentiment and sentiment_data is not None:
+                    st.session_state.forecaster.display_sentiment_analysis(sentiment_data)
+                else:
+                    st.info("Enable sentiment analysis in the sidebar to view this section.")
+
+            with tab4:
+                if include_economic and economic_data:
                     for indicator in Config.ECONOMIC_CONFIG['indicators']:
                         st.session_state.forecaster.display_economic_indicators(
-                            economic_data,
+                            economic_data.get(f'economic_{indicator}'),
                             indicator,
-                            st.session_state.economic_indicators
+                            st.session_state.economic_indicators,
+                            sentiment_data
                         )
                 else:
                     st.info("Enable economic indicators in the sidebar to view this section.")
