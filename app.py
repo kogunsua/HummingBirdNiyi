@@ -1,3 +1,7 @@
+"""
+Main application file for HummingBird v2
+"""
+
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import (
@@ -7,15 +11,7 @@ from data_fetchers import (
     GDELTDataFetcher,
     IntegratedDataFetcher
 )
-from forecasting import (
-    prophet_forecast,
-    create_forecast_plot,
-    display_metrics,
-    display_economic_indicators,
-    display_sentiment_analysis,
-    display_components,
-    calculate_accuracy
-)
+from forecasting import Forecasting
 
 
 def display_footer():
@@ -64,6 +60,8 @@ def initialize_session_state():
         st.session_state.real_estate_indicators = RealEstateIndicators()
     if "integrated_data_fetcher" not in st.session_state:
         st.session_state.integrated_data_fetcher = IntegratedDataFetcher()
+    if "forecaster" not in st.session_state:
+        st.session_state.forecaster = Forecasting()
 
 
 def main():
@@ -101,10 +99,20 @@ def main():
         asset_type = st.sidebar.selectbox("Asset Type:", Config.ASSET_TYPES)
         forecast_period = st.sidebar.slider("Forecast Period (days):", 7, 90, 30)
 
+        # Additional options
+        st.sidebar.header("📊 Additional Indicators")
+        include_sentiment = st.sidebar.checkbox("Include Sentiment Analysis", value=True)
+        include_economic = st.sidebar.checkbox("Include Economic Indicators", value=True)
+
         if validate_inputs(symbol, forecast_period, asset_type):
             # Data fetching
             fetcher = AssetDataFetcher(asset_type, symbol)
             historical_data = fetcher.get_historical_data()
+
+            # Get additional data
+            gdelt_fetcher = GDELTDataFetcher(symbol)
+            sentiment_data = gdelt_fetcher.get_sentiment_data() if include_sentiment else None
+            economic_data = st.session_state.economic_indicators.get_indicators() if include_economic else None
 
             # Display metrics
             st.header("📊 Historical Data Overview")
@@ -112,22 +120,69 @@ def main():
 
             # Forecasting
             st.header("🔮 Forecasting Results")
-            forecast_df = prophet_forecast(historical_data, forecast_period)
-            forecast_plot = create_forecast_plot(forecast_df, historical_data)
+            forecast_df, error = st.session_state.forecaster.prophet_forecast(
+                historical_data, 
+                forecast_period,
+                sentiment_data,
+                economic_data
+            )
 
-            st.plotly_chart(forecast_plot)
-            display_metrics(forecast_df, forecast_period)
+            if error:
+                st.error(f"Error generating forecast: {error}")
+                return
 
-            # Economic and sentiment indicators
-            st.header("📈 Economic Indicators")
-            display_economic_indicators(st.session_state.economic_indicators)
+            # Display forecast plot
+            forecast_plot = st.session_state.forecaster.create_forecast_plot(
+                historical_data,
+                forecast_df,
+                selected_model,
+                symbol,
+                sentiment_data
+            )
+            st.plotly_chart(forecast_plot, use_container_width=True)
 
-            st.header("📰 Sentiment Analysis")
-            display_sentiment_analysis(GDELTDataFetcher(symbol))
+            # Display metrics and components
+            st.session_state.forecaster.display_metrics(
+                historical_data,
+                forecast_df,
+                asset_type,
+                symbol,
+                sentiment_data
+            )
 
-            # Model components
-            st.header("🧩 Model Components")
-            display_components(forecast_df)
+            # Create tabs for additional analysis
+            tab1, tab2, tab3 = st.tabs(["Components", "Sentiment", "Economic"])
+
+            with tab1:
+                st.session_state.forecaster.display_components(forecast_df)
+
+            with tab2:
+                if include_sentiment and sentiment_data is not None:
+                    st.session_state.forecaster.display_sentiment_analysis(sentiment_data)
+                else:
+                    st.info("Enable sentiment analysis in the sidebar to view this section.")
+
+            with tab3:
+                if include_economic and economic_data is not None:
+                    for indicator in Config.ECONOMIC_CONFIG['indicators']:
+                        st.session_state.forecaster.display_economic_indicators(
+                            economic_data,
+                            indicator,
+                            st.session_state.economic_indicators,
+                            sentiment_data
+                        )
+                else:
+                    st.info("Enable economic indicators in the sidebar to view this section.")
+
+            # Display accuracy metrics
+            accuracy_metrics = st.session_state.forecaster.calculate_accuracy(
+                historical_data['Close'],
+                forecast_df['yhat'][-len(historical_data):]
+            )
+            
+            st.header("📈 Forecast Accuracy")
+            for metric, value in accuracy_metrics.items():
+                st.metric(metric, f"{value:.2f}")
 
     except Exception as e:
         handle_error(e, "main application logic")
