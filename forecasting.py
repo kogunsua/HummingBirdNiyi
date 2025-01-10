@@ -34,8 +34,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
         }
     except Exception as e:
         st.error(f"Error calculating accuracy metrics: {str(e)}")
-        return {}
-        def prophet_forecast(data: pd.DataFrame, 
+        return {}def prophet_forecast(data: pd.DataFrame, 
                     periods: int, 
                     sentiment_data: Optional[pd.DataFrame] = None,
                     economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
@@ -89,8 +88,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
         return forecast, None
     
     except Exception as e:
-        return None, str(e)
-        def create_forecast_plot(data: pd.DataFrame, 
+        return None, str(e)def create_forecast_plot(data: pd.DataFrame, 
                        forecast: pd.DataFrame, 
                        model_name: str, 
                        symbol: str,
@@ -162,8 +160,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
         }
 
     fig.update_layout(layout)
-    return fig
-    def display_components(forecast: pd.DataFrame):
+    return figdef display_components(forecast: pd.DataFrame):
     """Display forecast components"""
     st.subheader("📊 Forecast Components")
     
@@ -239,8 +236,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
                     yaxis_title="Effect",
                     template="plotly_white"
                 )
-                st.plotly_chart(fig_regressor, use_container_width=True)
-                def display_metrics(data: pd.DataFrame, 
+                st.plotly_chart(fig_regressor, use_container_width=True)def display_metrics(data: pd.DataFrame, 
                    forecast: pd.DataFrame, 
                    asset_type: str, 
                    symbol: str,
@@ -301,8 +297,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
                 delta_color='normal' if sentiment_change > 0 else 'inverse'
             )
         else:
-            st.metric("Forecast Period", f"{len(forecast) - len(data)} days")
-            def display_economic_indicators(economic_data: pd.DataFrame, 
+            st.metric("Forecast Period", f"{len(forecast) - len(data)} days")def display_economic_indicators(economic_data: pd.DataFrame, 
                              indicator: str,
                              economic_indicators,
                              sentiment_data: Optional[pd.DataFrame] = None):
@@ -372,8 +367,7 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
                 'Value': [f"{v:.2f}" if isinstance(v, (float, np.floating)) else str(v)
                          for v in stats.values()]
             })
-            st.dataframe(stats_df)
-            def display_sentiment_analysis(sentiment_data: pd.DataFrame):
+            st.dataframe(stats_df)def display_sentiment_analysis(sentiment_data: pd.DataFrame):
     """Display sentiment analysis"""
     if sentiment_data is not None and not sentiment_data.empty:
         st.subheader("🌐 Market Sentiment Analysis")
@@ -476,4 +470,3 @@ def calculate_accuracy(actual: pd.Series, predicted: pd.Series) -> Dict[str, flo
             })
             
             st.dataframe(metrics_df)
-            
