@@ -7,7 +7,6 @@ from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import (
     AssetDataFetcher,
     EconomicIndicators,
-    RealEstateIndicators,
     GDELTDataFetcher,
     IntegratedDataFetcher
 )
@@ -56,8 +55,6 @@ def initialize_session_state():
     """Initialize or reset session state variables"""
     if "economic_indicators" not in st.session_state:
         st.session_state.economic_indicators = EconomicIndicators()
-    if "real_estate_indicators" not in st.session_state:
-        st.session_state.real_estate_indicators = RealEstateIndicators()
     if "integrated_data_fetcher" not in st.session_state:
         st.session_state.integrated_data_fetcher = IntegratedDataFetcher()
     if "forecaster" not in st.session_state:
@@ -114,7 +111,7 @@ def main():
             sentiment_data = gdelt_fetcher.get_sentiment_data() if include_sentiment else None
             economic_data = st.session_state.economic_indicators.get_indicators() if include_economic else None
 
-            # Display metrics
+            # Display historical data overview
             st.header("📊 Historical Data Overview")
             st.dataframe(historical_data.tail(10))
 
@@ -181,8 +178,10 @@ def main():
             )
             
             st.header("📈 Forecast Accuracy")
-            for metric, value in accuracy_metrics.items():
-                st.metric(metric, f"{value:.2f}")
+            metrics_cols = st.columns(len(accuracy_metrics))
+            for col, (metric, value) in zip(metrics_cols, accuracy_metrics.items()):
+                with col:
+                    st.metric(metric, f"{value:.2f}")
 
     except Exception as e:
         handle_error(e, "main application logic")
