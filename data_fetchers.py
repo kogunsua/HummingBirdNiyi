@@ -65,6 +65,20 @@ class DataSourceManager:
             logger.warning(f"Alpha Vantage fetch failed: {str(e)}")
             return None
 
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def fetch_yahoo_data(symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch data from Yahoo Finance"""
+        try:
+            data = yf.download(symbol, start=start_date, end=end_date, progress=False)
+            if not data.empty:
+                data.index = pd.to_datetime(data.index).tz_localize(None)
+                return data
+            return None
+        except Exception as e:
+            logger.warning(f"Yahoo Finance fetch failed: {str(e)}")
+            return None
+
 class EconomicIndicators:
     def __init__(self):
         self._initialize_indicators()
@@ -157,9 +171,9 @@ class EconomicIndicators:
                 return df[['Close']].reset_index().rename(columns={'date': 'index'})
 
             # Fallback to Yahoo Finance
-            data = yf.download('IEF', start=Config.START, end=Config.TODAY)
-            if not data.empty:
-                return pd.DataFrame(data['Close']).reset_index()
+            df = DataSourceManager.fetch_yahoo_data('IEF', Config.START, Config.TODAY)
+            if df is not None:
+                return pd.DataFrame(df['Close']).reset_index()
 
             return None
         except Exception as e:
@@ -210,6 +224,60 @@ class EconomicIndicators:
             return {}
 
 class AssetDataFetcher:
+    # Crypto symbol mappings
+    CRYPTO_MAPPINGS = {
+        'XRP': {
+            'coingecko': 'ripple',
+            'polygon': 'X:XRPUSD',
+            'yahoo': 'XRP-USD'
+        },
+        'BTC': {
+            'coingecko': 'bitcoin',
+            'polygon': 'X:BTCUSD',
+            'yahoo': 'BTC-USD'
+        },
+        'ETH': {
+            'coingecko': 'ethereum',
+            'polygon': 'X:ETHUSD',
+            'yahoo': 'ETH-USD'
+        },
+        'DOGE': {
+            'coingecko': 'dogecoin',
+            'polygon': 'X:DOGEUSD',
+            'yahoo': 'DOGE-USD'
+        },
+        'ADA': {
+            'coingecko': 'cardano',
+            'polygon': 'X:ADAUSD',
+            'yahoo': 'ADA-USD'
+        },
+        'DOT': {
+            'coingecko': 'polkadot',
+            'polygon': 'X:DOTUSD',
+            'yahoo': 'DOT-USD'
+        },
+        'LINK': {
+            'coingecko': 'chainlink',
+            'polygon': 'X:LINKUSD',
+            'yahoo': 'LINK-USD'
+        },
+        'UNI': {
+            'coingecko': 'uniswap',
+            'polygon': 'X:UNIUSD',
+            'yahoo': 'UNI-USD'
+        },
+        'MATIC': {
+            'coingecko': 'matic-network',
+            'polygon': 'X:MATICUSD',
+            'yahoo': 'MATIC-USD'
+        },
+        'SOL': {
+            'coingecko': 'solana',
+            'polygon': 'X:SOLUSD',
+            'yahoo': 'SOL-USD'
+        }
+    }
+
     def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching stock data"""
         return self._fetch_stock_data(symbol)
@@ -222,20 +290,20 @@ class AssetDataFetcher:
             # Try Polygon first
             df = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
             if df is not None:
+                logger.info(f"Successfully fetched {symbol} from Polygon.io")
                 return df
 
             # Try Alpha Vantage
             df = DataSourceManager.fetch_alpha_vantage_data(symbol)
             if df is not None:
+                logger.info(f"Successfully fetched {symbol} from Alpha Vantage")
                 return df
 
             # Fallback to Yahoo Finance
-            ticker = yf.Ticker(symbol)
-            data = ticker.history(period="1y", interval="1d")
-            
-            if not data.empty:
-                data.index = pd.to_datetime(data.index).tz_localize(None)
-                return data
+            df = DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
+            if df is not None:
+                logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
+                return df
                 
             raise ValueError(f"No data available for {symbol}")
             
@@ -250,17 +318,30 @@ class AssetDataFetcher:
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def _fetch_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch and cache crypto data"""
+        """Internal method to fetch and cache crypto data with multiple source fallback"""
+        # Convert symbol to uppercase for consistency
+        symbol = symbol.upper()
+        
+        # Get symbol mappings
+        mappings = AssetDataFetcher.CRYPTO_MAPPINGS.get(symbol, {
+            'coingecko': symbol.lower(),
+            'polygon': f'X:{symbol}USD',
+            'yahoo': f'{symbol}-USD'
+        })
+
+        # Try CoinGecko first
         try:
+            logger.info(f"Attempting to fetch {symbol} from CoinGecko...")
             cg = CoinGeckoAPI()
             data = cg.get_coin_market_chart_by_id(
-                id=symbol,
+                id=mappings['coingecko'],
                 vs_currency='usd',
                 days=365,
                 interval='daily'
             )
             
             if data:
+                logger.info(f"Successfully fetched {symbol} from CoinGecko")
                 prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
                 volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
                 
@@ -273,22 +354,46 @@ class AssetDataFetcher:
                 df['High'] = df['Close']
                 df['Low'] = df['Close']
                 df = df.ffill()
-                
                 return df
-            
-            return None
+                
+            logger.warning(f"No data returned from CoinGecko for {symbol}")
+            raise Exception("No data from CoinGecko")
             
         except Exception as e:
-            st.error(f"Error fetching crypto data from CoinGecko: {str(e)}")
+            logger.warning(f"CoinGecko fetch failed for {symbol}: {str(e)}")
             
-            # Fallback to Polygon
+            # Fallback to Polygon.io
             try:
-                data = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
+                logger.info(f"Attempting to fetch {symbol} from Polygon.io...")
+                data = DataSourceManager.fetch_polygon_data(
+                    mappings['polygon'],
+                    Config.START,
+                    Config.TODAY
+                )
                 if data is not None:
+                    logger.info(f"Successfully fetched {symbol} from Polygon.io")
                     return data
+                logger.warning(f"No data returned from Polygon.io for {symbol}")
             except Exception as polygon_error:
-                st.error(f"Error fetching crypto data from Polygon: {str(polygon_error)}")
-                return None
+                logger.warning(f"Polygon.io fetch failed for {symbol}: {str(polygon_error)}")
+            
+            # Final fallback to Yahoo Finance
+            try:
+                logger.info(f"Attempting to fetch {symbol} from Yahoo Finance...")
+                data = DataSourceManager.fetch_yahoo_data(
+                    mappings['yahoo'],
+                    Config.START,
+                    Config.TODAY
+                )
+                if data is not None:
+                    logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
+                    return data
+                logger.warning(f"No data returned from Yahoo Finance for {symbol}")
+            except Exception as yahoo_error:
+                logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(yahoo_error)}")
+            
+            st.error(f"Failed to fetch {symbol} data from all available sources")
+            return None
 
 class RealEstateIndicators:
     """Placeholder class for Real Estate Indicators"""
