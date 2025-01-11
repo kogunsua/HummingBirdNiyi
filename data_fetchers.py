@@ -24,12 +24,14 @@ class DataSourceManager:
         self.cg = CoinGeckoAPI()
         self.polygon_headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
 
+    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
-    def fetch_polygon_data(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    def fetch_polygon_data(symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch data from Polygon.io"""
         try:
+            headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
             url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}"
-            response = requests.get(url, headers=self.polygon_headers)
+            response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()
@@ -44,26 +46,27 @@ class DataSourceManager:
             logger.warning(f"Polygon.io fetch failed: {str(e)}")
             return None
 
+    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
-    def fetch_alpha_vantage_data(self, symbol: str) -> Optional[pd.DataFrame]:
+    def fetch_alpha_vantage_data(symbol: str) -> Optional[pd.DataFrame]:
         """Fetch data from Alpha Vantage"""
         try:
-            data, _ = self.alpha_vantage.get_daily(symbol=symbol, outputsize='full')
-            data = data.rename(columns={
+            ts = TimeSeries(key=Config.ALPHA_VANTAGE_API_KEY)
+            data, _ = ts.get_daily(symbol=symbol, outputsize='full')
+            df = pd.DataFrame(data).rename(columns={
                 '1. open': 'Open',
                 '2. high': 'High',
                 '3. low': 'Low',
                 '4. close': 'Close',
                 '5. volume': 'Volume'
             })
-            return data
+            return df
         except Exception as e:
             logger.warning(f"Alpha Vantage fetch failed: {str(e)}")
             return None
 
 class EconomicIndicators:
     def __init__(self):
-        self.data_manager = DataSourceManager()
         self._initialize_indicators()
     
     def _initialize_indicators(self):
@@ -100,17 +103,23 @@ class EconomicIndicators:
                 'units': 'USD'
             }
         }
-    
-    @st.cache_data(ttl=Config.CACHE_TTL)
+
     def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
-        """Fetch and process economic indicator data with proper error handling"""
+        """Public wrapper for fetching indicator data"""
+        return self._fetch_indicator_data(indicator)
+
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def _fetch_indicator_data(indicator: str) -> Optional[pd.DataFrame]:
+        """Internal method to fetch and cache indicator data"""
         try:
             if indicator == 'IEF':
-                # Try multiple data sources for IEF
-                df = self._get_ief_data()
+                df = EconomicIndicators._get_ief_data()
             else:
-                indicator_info = self.indicator_details[indicator]
-                df = self._get_fred_data(indicator_info)
+                fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
+                indicator_details = EconomicIndicators._get_indicator_details()
+                indicator_info = indicator_details[indicator]
+                df = EconomicIndicators._get_fred_data(fred, indicator_info)
             
             if df is not None:
                 df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
@@ -122,31 +131,46 @@ class EconomicIndicators:
             st.error(f"Error fetching {indicator} data: {str(e)}")
             return None
 
-    def _get_ief_data(self) -> Optional[pd.DataFrame]:
+    @staticmethod
+    def _get_indicator_details():
+        """Get indicator details dictionary"""
+        return {
+            'GDP': {'series_id': 'GDP', 'description': 'Gross Domestic Product', 'frequency': 'Quarterly'},
+            'UNRATE': {'series_id': 'UNRATE', 'description': 'Unemployment Rate', 'frequency': 'Monthly'},
+            'CPIAUCSL': {'series_id': 'CPIAUCSL', 'description': 'Consumer Price Index', 'frequency': 'Monthly'},
+            'DFF': {'series_id': 'DFF', 'description': 'Federal Funds Rate', 'frequency': 'Daily'},
+            'IEF': {'series_id': 'IEF', 'description': 'iShares 7-10 Year Treasury Bond ETF', 'frequency': 'Daily'}
+        }
+
+    @staticmethod
+    def _get_ief_data() -> Optional[pd.DataFrame]:
         """Get IEF data with multiple source fallback"""
-        # Try Polygon first
-        df = self.data_manager.fetch_polygon_data('IEF', Config.START, Config.TODAY)
-        if df is not None:
-            return df[['Close']].reset_index().rename(columns={'timestamp': 'index'})
+        try:
+            # Try Polygon first
+            df = DataSourceManager.fetch_polygon_data('IEF', Config.START, Config.TODAY)
+            if df is not None:
+                return df[['Close']].reset_index().rename(columns={'timestamp': 'index'})
 
-        # Try Alpha Vantage
-        df = self.data_manager.fetch_alpha_vantage_data('IEF')
-        if df is not None:
-            return df[['Close']].reset_index().rename(columns={'date': 'index'})
+            # Try Alpha Vantage
+            df = DataSourceManager.fetch_alpha_vantage_data('IEF')
+            if df is not None:
+                return df[['Close']].reset_index().rename(columns={'date': 'index'})
 
-        # Fallback to Yahoo Finance
-        data = yf.download('IEF', start=Config.START, end=Config.TODAY)
-        if not data.empty:
-            return pd.DataFrame(data['Close']).reset_index()
+            # Fallback to Yahoo Finance
+            data = yf.download('IEF', start=Config.START, end=Config.TODAY)
+            if not data.empty:
+                return pd.DataFrame(data['Close']).reset_index()
 
-        return None
+            return None
+        except Exception as e:
+            logger.warning(f"Error fetching IEF data: {str(e)}")
+            return None
 
-    def _get_fred_data(self, indicator_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    @staticmethod
+    def _get_fred_data(fred: fredapi.Fred, indicator_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Get data from FRED"""
         series_id = indicator_info['series_id']
-        series_info = self.data_manager.fred.get_series_info(series_id)
-        
-        data = self.data_manager.fred.get_series(
+        data = fred.get_series(
             series_id,
             observation_start=Config.START,
             observation_end=Config.TODAY,
@@ -158,13 +182,7 @@ class EconomicIndicators:
         
         if indicator_info['frequency'] != 'Daily':
             df['value'] = df['value'].ffill()
-        
-        df.attrs.update({
-            'title': indicator_info['description'],
-            'units': indicator_info['units'],
-            'frequency': indicator_info['frequency']
-        })
-        
+            
         return df
 
     def get_indicator_info(self, indicator: str) -> dict:
@@ -186,35 +204,28 @@ class EconomicIndicators:
                 'avg_value': df['value'].mean(),
                 'std_dev': df['value'].std()
             }
-            
             return stats
-            
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
 
 class AssetDataFetcher:
-    def __init__(self):
-        self.data_manager = DataSourceManager()
-
     def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch stock data with fallback to multiple sources"""
+        """Public wrapper for fetching stock data"""
         return self._fetch_stock_data(symbol)
 
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def _fetch_stock_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch stock data with caching"""
+        """Internal method to fetch and cache stock data"""
         try:
-            data_manager = DataSourceManager()
-            
-            # Try Polygon.io first
-            df = data_manager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
+            # Try Polygon first
+            df = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
             if df is not None:
                 return df
 
             # Try Alpha Vantage
-            df = data_manager.fetch_alpha_vantage_data(symbol)
+            df = DataSourceManager.fetch_alpha_vantage_data(symbol)
             if df is not None:
                 return df
 
@@ -233,18 +244,16 @@ class AssetDataFetcher:
             return None
 
     def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch cryptocurrency data with multiple source fallback"""
+        """Public wrapper for fetching crypto data"""
         return self._fetch_crypto_data(symbol)
 
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def _fetch_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch crypto data with caching"""
+        """Internal method to fetch and cache crypto data"""
         try:
-            # Create new instance for thread safety
-            data_manager = DataSourceManager()
-            # Try CoinGecko first
-            data = data_manager.cg.get_coin_market_chart_by_id(
+            cg = CoinGeckoAPI()
+            data = cg.get_coin_market_chart_by_id(
                 id=symbol,
                 vs_currency='usd',
                 days=365,
@@ -267,7 +276,6 @@ class AssetDataFetcher:
                 
                 return df
             
-            # Fallback to other sources if needed
             return None
             
         except Exception as e:
