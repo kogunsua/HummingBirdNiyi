@@ -1,5 +1,5 @@
 """
-Handles all forecasting operations including predictions, visualization, and analysis.
+Handles all forecasting operations including predictions, visualizations, and analysis.
 """
 
 import pandas as pd
