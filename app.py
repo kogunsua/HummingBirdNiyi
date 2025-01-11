@@ -19,7 +19,7 @@ def display_footer():
 
 def main():
     st.set_page_config(
-        page_title="HummingBird v2",
+        page_title="HummingBird v2-dev",
         page_icon="🐦",
         layout="wide"
     )
