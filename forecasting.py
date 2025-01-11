@@ -34,9 +34,9 @@ class Forecasting:
 
     @staticmethod
     def prophet_forecast(data: pd.DataFrame, 
-                      periods: int, 
-                      sentiment_data: Optional[pd.DataFrame] = None,
-                      economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+                         periods: int, 
+                         sentiment_data: Optional[pd.DataFrame] = None,
+                         economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         """Generate forecasts using Prophet with sentiment and economic indicators"""
         try:
             # Prepare data for Prophet
@@ -90,10 +90,10 @@ class Forecasting:
 
     @staticmethod
     def create_forecast_plot(data: pd.DataFrame, 
-                         forecast: pd.DataFrame, 
-                         model_name: str, 
-                         symbol: str,
-                         sentiment_data: Optional[pd.DataFrame] = None) -> go.Figure:
+                             forecast: pd.DataFrame, 
+                             model_name: str, 
+                             symbol: str,
+                             sentiment_data: Optional[pd.DataFrame] = None) -> go.Figure:
         """Create enhanced forecast plot"""
         try:
             fig = go.Figure()
@@ -169,10 +169,10 @@ class Forecasting:
 
     @staticmethod
     def display_metrics(data: pd.DataFrame, 
-                     forecast: pd.DataFrame, 
-                     asset_type: str, 
-                     symbol: str,
-                     sentiment_data: Optional[pd.DataFrame] = None):
+                        forecast: pd.DataFrame, 
+                        asset_type: str, 
+                        symbol: str,
+                        sentiment_data: Optional[pd.DataFrame] = None):
         """Display enhanced metrics including sentiment"""
         try:
             st.subheader("📊 Market Metrics")
@@ -293,8 +293,8 @@ class Forecasting:
             
             with tab3:
                 extra_regressors = [col for col in forecast.columns 
-                                if col.endswith('_regressor') 
-                                or col in ['sentiment', 'regressor']]
+                                    if col.endswith('_regressor') 
+                                    or col in ['sentiment', 'regressor']]
                 
                 for regressor in extra_regressors:
                     if regressor in forecast.columns:
@@ -316,9 +316,9 @@ class Forecasting:
 
     @staticmethod
     def display_economic_indicators(economic_data: pd.DataFrame, 
-                                indicator: str,
-                                economic_indicators,
-                                sentiment_data: Optional[pd.DataFrame] = None):
+                                    indicator: str,
+                                    economic_indicators,
+                                    sentiment_data: Optional[pd.DataFrame] = None):
         """Display economic indicator data and analysis"""
         try:
             if economic_data is not None:
@@ -386,7 +386,8 @@ class Forecasting:
                     st.dataframe(stats_df)
         except Exception as e:
             st.error(f"Error displaying economic indicators: {str(e)}")
-            @staticmethod
+
+    @staticmethod
     def display_sentiment_analysis(sentiment_data: pd.DataFrame):
         """Display sentiment analysis visualization and metrics"""
         try:
