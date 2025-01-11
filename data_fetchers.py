@@ -11,7 +11,7 @@ from config import Config
 from pycoingecko import CoinGeckoAPI
 import logging
 
-# Configure logging
+# Configure loggings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
