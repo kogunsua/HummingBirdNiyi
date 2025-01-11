@@ -197,17 +197,24 @@ class AssetDataFetcher:
     def __init__(self):
         self.data_manager = DataSourceManager()
 
-    @st.cache_data(ttl=Config.CACHE_TTL)
     def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Fetch stock data with fallback to multiple sources"""
+        return self._fetch_stock_data(symbol)
+
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def _fetch_stock_data(symbol: str) -> Optional[pd.DataFrame]:
+        """Internal method to fetch stock data with caching"""
         try:
+            data_manager = DataSourceManager()
+            
             # Try Polygon.io first
-            df = self.data_manager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
+            df = data_manager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
             if df is not None:
                 return df
 
             # Try Alpha Vantage
-            df = self.data_manager.fetch_alpha_vantage_data(symbol)
+            df = data_manager.fetch_alpha_vantage_data(symbol)
             if df is not None:
                 return df
 
@@ -225,12 +232,19 @@ class AssetDataFetcher:
             st.error(f"Error fetching stock data: {str(e)}")
             return None
 
-    @st.cache_data(ttl=Config.CACHE_TTL)
     def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Fetch cryptocurrency data with multiple source fallback"""
+        return self._fetch_crypto_data(symbol)
+
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def _fetch_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
+        """Internal method to fetch crypto data with caching"""
         try:
+            # Create new instance for thread safety
+            data_manager = DataSourceManager()
             # Try CoinGecko first
-            data = self.data_manager.cg.get_coin_market_chart_by_id(
+            data = data_manager.cg.get_coin_market_chart_by_id(
                 id=symbol,
                 vs_currency='usd',
                 days=365,
