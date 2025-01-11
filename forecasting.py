@@ -480,3 +480,5 @@ class Forecasting:
                     ]
                 })
                 st.dataframe(metrics_df)
+                       except Exception as e:
+                       st.error(f"Error displaying sentiment analysis: {str(e)}")
