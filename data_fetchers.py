@@ -118,8 +118,7 @@ class EconomicIndicators:
                 'units': 'USD'
             }
         }
-
-    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
+        def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching indicator data"""
         return self._fetch_indicator_data(indicator)
 
@@ -218,12 +217,11 @@ class EconomicIndicators:
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
-
-class AssetDataFetcher:
+            class AssetDataFetcher:
     # Crypto symbol mappings with proper CoinGecko IDs
     CRYPTO_MAPPINGS = {
         'XRP': {
-            'coingecko': 'ripple',
+            'coingecko': 'xrp',  # Updated CoinGecko ID
             'polygon': 'X:XRPUSD',
             'yahoo': 'XRP-USD'
         },
@@ -281,12 +279,40 @@ class AssetDataFetcher:
     @staticmethod
     def _get_crypto_mappings(symbol: str) -> Dict[str, str]:
         """Get crypto mappings with fallbacks"""
+        # Convert symbol to uppercase for consistency in lookup
+        symbol = symbol.upper()
+        
+        # Special cases for CoinGecko IDs that don't match the symbol
+        COINGECKO_SPECIAL_CASES = {
+            'XRP': 'xrp',
+            'BTC': 'bitcoin',
+            'ETH': 'ethereum',
+            'DOGE': 'dogecoin',
+            'ADA': 'cardano',
+            'DOT': 'polkadot',
+            'LINK': 'chainlink',
+            'UNI': 'uniswap',
+            'MATIC': 'matic-network',
+            'SOL': 'solana',
+            'AVAX': 'avalanche-2',
+            'SHIB': 'shiba-inu',
+            'LTC': 'litecoin',
+            'ATOM': 'cosmos',
+            'XLM': 'stellar',
+            'ALGO': 'algorand',
+            'ICP': 'internet-computer',
+            'FIL': 'filecoin',
+            'NEAR': 'near',
+            'VET': 'vechain'
+        }
+
         # Default mappings if not in predefined list
         default_mappings = {
-            'coingecko': symbol.lower(),
+            'coingecko': COINGECKO_SPECIAL_CASES.get(symbol, symbol.lower()),
             'polygon': f'X:{symbol}USD',
             'yahoo': f'{symbol}-USD'
         }
+        
         return AssetDataFetcher.CRYPTO_MAPPINGS.get(symbol, default_mappings)
 
     @staticmethod
@@ -334,9 +360,11 @@ class AssetDataFetcher:
         """Internal method to fetch and cache crypto data with multiple source fallback"""
         # Convert symbol to uppercase for consistency
         symbol = symbol.upper()
+        logger.info(f"Fetching crypto data for symbol: {symbol}")
         
         # Get symbol mappings
         mappings = AssetDataFetcher._get_crypto_mappings(symbol)
+        logger.info(f"Using mappings: {mappings}")
         error_messages = []
 
         # Try CoinGecko first for crypto
@@ -352,7 +380,6 @@ class AssetDataFetcher:
             
             if data and 'prices' in data:
                 logger.info(f"Successfully fetched {symbol} from CoinGecko")
-                prices_df = pd.DataFrame 
                 prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
                 volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
                 
