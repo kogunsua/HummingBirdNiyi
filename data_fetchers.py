@@ -118,7 +118,8 @@ class EconomicIndicators:
                 'units': 'USD'
             }
         }
-        def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
+
+    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching indicator data"""
         return self._fetch_indicator_data(indicator)
 
@@ -217,7 +218,8 @@ class EconomicIndicators:
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
-            class AssetDataFetcher:
+
+class AssetDataFetcher:
     # Crypto symbol mappings with proper CoinGecko IDs
     CRYPTO_MAPPINGS = {
         'XRP': {
