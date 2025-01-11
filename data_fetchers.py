@@ -20,7 +20,7 @@ class DataSourceManager:
     """Manages multiple data source connections and API keys"""
     def __init__(self):
         self.fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
-        self.alpha_vantage = TimeSeries(key=Config.ALPHA_VANTAGE_API_KEY)
+        self.alpha_vantage = TimeSeries(key='E3R1QOXBCPW9924S')
         self.cg = CoinGeckoAPI()
         self.polygon_headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
 
@@ -51,7 +51,7 @@ class DataSourceManager:
     def fetch_alpha_vantage_data(symbol: str) -> Optional[pd.DataFrame]:
         """Fetch data from Alpha Vantage"""
         try:
-            ts = TimeSeries(key=Config.ALPHA_VANTAGE_API_KEY)
+            ts = TimeSeries(key='E3R1QOXBCPW9924S')
             data, _ = ts.get_daily(symbol=symbol, outputsize='full')
             df = pd.DataFrame(data).rename(columns={
                 '1. open': 'Open',
@@ -60,6 +60,7 @@ class DataSourceManager:
                 '4. close': 'Close',
                 '5. volume': 'Volume'
             })
+            df.index = pd.to_datetime(df.index)
             return df
         except Exception as e:
             logger.warning(f"Alpha Vantage fetch failed: {str(e)}")
@@ -160,20 +161,15 @@ class EconomicIndicators:
     def _get_ief_data() -> Optional[pd.DataFrame]:
         """Get IEF data with multiple source fallback"""
         try:
-            # Try Polygon first
-            df = DataSourceManager.fetch_polygon_data('IEF', Config.START, Config.TODAY)
-            if df is not None:
-                return df[['Close']].reset_index().rename(columns={'timestamp': 'index'})
+            # Try Yahoo Finance first
+            data = DataSourceManager.fetch_yahoo_data('IEF', Config.START, Config.TODAY)
+            if data is not None:
+                return pd.DataFrame(data['Close']).reset_index()
 
             # Try Alpha Vantage
             df = DataSourceManager.fetch_alpha_vantage_data('IEF')
             if df is not None:
                 return df[['Close']].reset_index().rename(columns={'date': 'index'})
-
-            # Fallback to Yahoo Finance
-            df = DataSourceManager.fetch_yahoo_data('IEF', Config.START, Config.TODAY)
-            if df is not None:
-                return pd.DataFrame(df['Close']).reset_index()
 
             return None
         except Exception as e:
@@ -224,7 +220,7 @@ class EconomicIndicators:
             return {}
 
 class AssetDataFetcher:
-    # Crypto symbol mappings
+    # Crypto symbol mappings with proper CoinGecko IDs
     CRYPTO_MAPPINGS = {
         'XRP': {
             'coingecko': 'ripple',
@@ -283,33 +279,50 @@ class AssetDataFetcher:
         return self._fetch_stock_data(symbol)
 
     @staticmethod
+    def _get_crypto_mappings(symbol: str) -> Dict[str, str]:
+        """Get crypto mappings with fallbacks"""
+        # Default mappings if not in predefined list
+        default_mappings = {
+            'coingecko': symbol.lower(),
+            'polygon': f'X:{symbol}USD',
+            'yahoo': f'{symbol}-USD'
+        }
+        return AssetDataFetcher.CRYPTO_MAPPINGS.get(symbol, default_mappings)
+
+    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
     def _fetch_stock_data(symbol: str) -> Optional[pd.DataFrame]:
         """Internal method to fetch and cache stock data"""
+        error_messages = []
+        
+        # Try Yahoo Finance first for stocks
         try:
-            # Try Polygon first
-            df = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
-            if df is not None:
-                logger.info(f"Successfully fetched {symbol} from Polygon.io")
-                return df
+            logger.info(f"Attempting to fetch {symbol} from Yahoo Finance...")
+            data = DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
+            if data is not None:
+                logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
+                return data
+            error_messages.append("Yahoo Finance: No data returned")
+        except Exception as e:
+            error_messages.append(f"Yahoo Finance: {str(e)}")
+            logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(e)}")
 
-            # Try Alpha Vantage
+        # Fallback to Alpha Vantage
+        try:
+            logger.info(f"Attempting to fetch {symbol} from Alpha Vantage...")
             df = DataSourceManager.fetch_alpha_vantage_data(symbol)
             if df is not None:
                 logger.info(f"Successfully fetched {symbol} from Alpha Vantage")
                 return df
-
-            # Fallback to Yahoo Finance
-            df = DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
-            if df is not None:
-                logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
-                return df
-                
-            raise ValueError(f"No data available for {symbol}")
-            
+            error_messages.append("Alpha Vantage: No data returned")
         except Exception as e:
-            st.error(f"Error fetching stock data: {str(e)}")
-            return None
+            error_messages.append(f"Alpha Vantage: {str(e)}")
+            logger.warning(f"Alpha Vantage fetch failed for {symbol}: {str(e)}")
+            
+        # If all sources failed, show detailed error message
+        error_msg = f"Failed to fetch {symbol} data from all sources:\n" + "\n".join(error_messages)
+        st.error(error_msg)
+        return None
 
     def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching crypto data"""
@@ -323,13 +336,10 @@ class AssetDataFetcher:
         symbol = symbol.upper()
         
         # Get symbol mappings
-        mappings = AssetDataFetcher.CRYPTO_MAPPINGS.get(symbol, {
-            'coingecko': symbol.lower(),
-            'polygon': f'X:{symbol}USD',
-            'yahoo': f'{symbol}-USD'
-        })
+        mappings = AssetDataFetcher._get_crypto_mappings(symbol)
+        error_messages = []
 
-        # Try CoinGecko first
+        # Try CoinGecko first for crypto
         try:
             logger.info(f"Attempting to fetch {symbol} from CoinGecko...")
             cg = CoinGeckoAPI()
@@ -340,8 +350,9 @@ class AssetDataFetcher:
                 interval='daily'
             )
             
-            if data:
+            if data and 'prices' in data:
                 logger.info(f"Successfully fetched {symbol} from CoinGecko")
+                prices_df = pd.DataFrame 
                 prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
                 volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
                 
@@ -354,46 +365,49 @@ class AssetDataFetcher:
                 df['High'] = df['Close']
                 df['Low'] = df['Close']
                 df = df.ffill()
-                return df
                 
-            logger.warning(f"No data returned from CoinGecko for {symbol}")
-            raise Exception("No data from CoinGecko")
-            
+                return df
+            error_messages.append("CoinGecko: No data returned")
         except Exception as e:
+            error_messages.append(f"CoinGecko: {str(e)}")
             logger.warning(f"CoinGecko fetch failed for {symbol}: {str(e)}")
-            
-            # Fallback to Polygon.io
-            try:
-                logger.info(f"Attempting to fetch {symbol} from Polygon.io...")
-                data = DataSourceManager.fetch_polygon_data(
-                    mappings['polygon'],
-                    Config.START,
-                    Config.TODAY
-                )
-                if data is not None:
-                    logger.info(f"Successfully fetched {symbol} from Polygon.io")
-                    return data
-                logger.warning(f"No data returned from Polygon.io for {symbol}")
-            except Exception as polygon_error:
-                logger.warning(f"Polygon.io fetch failed for {symbol}: {str(polygon_error)}")
-            
-            # Final fallback to Yahoo Finance
-            try:
-                logger.info(f"Attempting to fetch {symbol} from Yahoo Finance...")
-                data = DataSourceManager.fetch_yahoo_data(
-                    mappings['yahoo'],
-                    Config.START,
-                    Config.TODAY
-                )
-                if data is not None:
-                    logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
-                    return data
-                logger.warning(f"No data returned from Yahoo Finance for {symbol}")
-            except Exception as yahoo_error:
-                logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(yahoo_error)}")
-            
-            st.error(f"Failed to fetch {symbol} data from all available sources")
-            return None
+
+        # Fallback to Polygon.io
+        try:
+            logger.info(f"Attempting to fetch {symbol} from Polygon.io...")
+            data = DataSourceManager.fetch_polygon_data(
+                mappings['polygon'],
+                Config.START,
+                Config.TODAY
+            )
+            if data is not None:
+                logger.info(f"Successfully fetched {symbol} from Polygon.io")
+                return data
+            error_messages.append("Polygon.io: No data returned")
+        except Exception as e:
+            error_messages.append(f"Polygon.io: {str(e)}")
+            logger.warning(f"Polygon.io fetch failed for {symbol}: {str(e)}")
+        
+        # Final fallback to Yahoo Finance
+        try:
+            logger.info(f"Attempting to fetch {symbol} from Yahoo Finance...")
+            data = DataSourceManager.fetch_yahoo_data(
+                mappings['yahoo'],
+                Config.START,
+                Config.TODAY
+            )
+            if data is not None:
+                logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
+                return data
+            error_messages.append("Yahoo Finance: No data returned")
+        except Exception as e:
+            error_messages.append(f"Yahoo Finance: {str(e)}")
+            logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(e)}")
+        
+        # If all sources failed, show detailed error message
+        error_msg = f"Failed to fetch {symbol} data from all sources:\n" + "\n".join(error_messages)
+        st.error(error_msg)
+        return None
 
 class RealEstateIndicators:
     """Placeholder class for Real Estate Indicators"""
