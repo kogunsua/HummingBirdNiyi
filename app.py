@@ -128,7 +128,8 @@ def main():
         # Generate Forecast
         if st.button("🚀 Generate Forecast"):
             with st.spinner('Loading data...'):
-                data = AssetDataFetcher.get_stock_data(symbol) if asset_type == "Stocks" else AssetDataFetcher.get_crypto_data(symbol)
+                fetcher = AssetDataFetcher()
+                data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
                 
                 # Get economic indicator data
                 economic_data = None
