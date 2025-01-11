@@ -1,8 +1,3 @@
-To resolve the issue with the `fetch_gkg_data` method in the `GDELTDataFetcher` class, we need to remove the `@st.cache_data` decorator from methods that have non-hashable arguments or refactor the method to avoid the hashing error.
-
-Here is the updated `data_fetchers.py` file with the necessary changes:
-
-```python
 """
 Data fetching utilities for market data and indicators
 """
@@ -476,4 +471,6 @@ class IntegratedDataFetcher:
         context = self.get_market_context(symbol, asset_type)
         
         try:
-            if sentiment_data is
+            if sentiment_data is not None:
+                price_data = (self._asset_fetcher.get_stock_data(symbol) 
+                            if asset_type == "
