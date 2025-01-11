@@ -1,3 +1,8 @@
+To resolve the issue with the `fetch_gkg_data` method in the `GDELTDataFetcher` class, we need to remove the `@st.cache_data` decorator from methods that have non-hashable arguments or refactor the method to avoid the hashing error.
+
+Here is the updated `data_fetchers.py` file with the necessary changes:
+
+```python
 """
 Data fetching utilities for market data and indicators
 """
@@ -127,6 +132,7 @@ class AssetDataFetcher:
         except Exception as e:
             st.warning(f"Error calculating technical indicators: {str(e)}")
             return df
+
 class EconomicIndicators:
     """Handle economic indicators data"""
     
@@ -223,6 +229,7 @@ class EconomicIndicators:
     def _calculate_volatility(self, series: pd.Series) -> float:
         """Calculate volatility"""
         return series.pct_change().std() * np.sqrt(252)  # Annualized volatility
+
 class GDELTDataFetcher:
     """Handle GDELT data collection and analysis"""
     
@@ -230,7 +237,6 @@ class GDELTDataFetcher:
         self.config = Config.GDELT_CONFIG
         self.cache = {}
     
-    @st.cache_data(ttl=Config.CACHE_TTL)
     def get_sentiment_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Get sentiment data for a symbol with caching"""
         try:
@@ -333,8 +339,7 @@ class GDELTDataFetcher:
             sentiment_ma5 = sentiment_data['sentiment_ma5'].iloc[-1]
             
             return {
-
-'current_sentiment': current_sentiment,
+                'current_sentiment': current_sentiment,
                 'short_term_trend': "Improving" if current_sentiment > sentiment_ma5 else "Declining",
                 'sentiment_score': f"{current_sentiment:.2f}",
                 'momentum': sentiment_data['sentiment_momentum'].iloc[-1],
@@ -347,7 +352,6 @@ class GDELTDataFetcher:
         except Exception as e:
             st.error(f"Error generating sentiment summary: {str(e)}")
             return {}
-
 
 class IntegratedDataFetcher:
     """Handle integrated data fetching from all sources"""
@@ -472,58 +476,4 @@ class IntegratedDataFetcher:
         context = self.get_market_context(symbol, asset_type)
         
         try:
-            if sentiment_data is not None:
-                price_data = (self._asset_fetcher.get_stock_data(symbol) 
-                            if asset_type == "Stocks"
-                            else self._asset_fetcher.get_crypto_data(symbol))
-                
-                if price_data is not None:
-                    context.update({
-                        'sentiment_correlation': self._calculate_sentiment_correlation(
-                            price_data['Close'],
-                            sentiment_data['market_sentiment']
-                        ),
-                        'sentiment_lag_effect': self._calculate_sentiment_lag_effect(
-                            price_data['Close'],
-                            sentiment_data['market_sentiment']
-                        )
-                    })
-            
-            return context
-            
-        except Exception as e:
-            st.error(f"Error calculating enhanced market context: {str(e)}")
-            return context
-
-    def _calculate_sentiment_correlation(self, prices: pd.Series, 
-                                      sentiment: pd.Series,
-                                      windows: List[int] = [5, 10, 20]) -> Dict[str, float]:
-        """Calculate correlation between price and sentiment at different windows"""
-        correlations = {}
-        try:
-            for window in windows:
-                price_returns = prices.pct_change(window)
-                sentiment_ma = sentiment.rolling(window=window).mean()
-                correlations[f'{window}d_correlation'] = price_returns.corr(sentiment_ma)
-            return correlations
-        except Exception as e:
-            st.error(f"Error calculating sentiment correlation: {str(e)}")
-            return {}
-
-    def _calculate_sentiment_lag_effect(self, prices: pd.Series, 
-                                      sentiment: pd.Series,
-                                      max_lag: int = 5) -> Dict[str, float]:
-        """Calculate lagged effects of sentiment on price"""
-        lag_effects = {}
-        try:
-            price_returns = prices.pct_change()
-            for lag in range(1, max_lag + 1):
-                lagged_sentiment = sentiment.shift(lag)
-                correlation = price_returns.corr(lagged_sentiment)
-                lag_effects[f'lag_{lag}_effect'] = correlation
-            return lag_effects
-        except Exception as e:
-            st.error(f"Error calculating sentiment lag effect: {str(e)}")
-            return {}
-
-
+            if sentiment_data is
