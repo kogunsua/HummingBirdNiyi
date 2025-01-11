@@ -1,10 +1,3 @@
-Here's the formatted code:
-
-```python
-"""
-Handles all forecasting operations including predictions, visualizations, and analysis.
-"""
-
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
