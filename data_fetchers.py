@@ -279,8 +279,16 @@ class AssetDataFetcher:
             return None
             
         except Exception as e:
-            st.error(f"Error fetching crypto data: {str(e)}")
-            return None
+            st.error(f"Error fetching crypto data from CoinGecko: {str(e)}")
+            
+            # Fallback to Polygon
+            try:
+                data = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
+                if data is not None:
+                    return data
+            except Exception as polygon_error:
+                st.error(f"Error fetching crypto data from Polygon: {str(polygon_error)}")
+                return None
 
 class RealEstateIndicators:
     """Placeholder class for Real Estate Indicators"""
