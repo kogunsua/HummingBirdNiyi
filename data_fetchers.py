@@ -197,9 +197,8 @@ class AssetDataFetcher:
     def __init__(self):
         self.data_manager = DataSourceManager()
 
-    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
-    def get_stock_data(symbol: str) -> Optional[pd.DataFrame]:
+    def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Fetch stock data with fallback to multiple sources"""
         try:
             # Try Polygon.io first
@@ -226,14 +225,12 @@ class AssetDataFetcher:
             st.error(f"Error fetching stock data: {str(e)}")
             return None
 
-    @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
-    def get_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
+    def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Fetch cryptocurrency data with multiple source fallback"""
         try:
             # Try CoinGecko first
-            cg = CoinGeckoAPI()
-            data = cg.get_coin_market_chart_by_id(
+            data = self.data_manager.cg.get_coin_market_chart_by_id(
                 id=symbol,
                 vs_currency='usd',
                 days=365,
