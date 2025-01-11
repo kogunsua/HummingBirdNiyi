@@ -7,7 +7,7 @@ from prophet import Prophet
 from typing import Tuple, Optional, Dict
 import logging
 
-# Configure for logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
