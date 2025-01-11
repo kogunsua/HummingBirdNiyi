@@ -20,7 +20,7 @@ def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
         # If index was unnamed, the reset_index creates a column named 'index'
         df = df.rename(columns={'index': 'ds'})
     
-    # Ensure Close price is named 'y' for Prophet
+    # Ensures Close price is named 'y' for Prophet
     df = df.rename(columns={'Close': 'y'})
     
     # Ensure datetime is timezone naive
