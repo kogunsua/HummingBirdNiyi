@@ -393,8 +393,7 @@ class Forecasting:
                     f"{current_sentiment:.2f}",
                     f"{'Positive' if current_sentiment > 0 else 'Negative'}",
                     delta_color='normal' if current_sentiment > 0 else 'inverse'
-                )
-                with col2:
+                ) with col2:
                 sentiment_ma5 = sentiment_data['sentiment_ma5'].iloc[-1]
                 trend = "Improving" if current_sentiment > sentiment_ma5 else "Declining"
                 st.metric(
