@@ -1,294 +1,174 @@
-# data_fetchers.py
+# app.py
 import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
-import requests
-import fredapi
-from typing import Optional, Dict, Any
-from datetime import date, timedelta
-from config import Config
-from alpha_vantage.timeseries import TimeSeries
-from pycoingecko import CoinGeckoAPI
-import logging
+from config import Config, MODEL_DESCRIPTIONS
+from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
+from forecasting import (
+    prophet_forecast,
+    create_forecast_plot,
+    display_metrics,
+    display_economic_indicators
+)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def display_footer():
+    """Display the application footer"""
+    st.markdown("""
+        <div style='text-align: center; padding: 10px;'>
+            <p>© 2025 AvaResearch LLC. All rights reserved.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-class DataSourceManager:
-    """Manages multiple data source connections and API keys"""
-    def __init__(self):
-        self.fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
-        self.alpha_vantage = TimeSeries(key=Config.ALPHA_VANTAGE_API_KEY)
-        self.cg = CoinGeckoAPI()
-        self.polygon_headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
-
-    @staticmethod
-    @st.cache_data(ttl=Config.CACHE_TTL)
-    def fetch_polygon_data(symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch data from Polygon.io"""
-        try:
-            headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
-            url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}"
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'results' in data:
-                    df = pd.DataFrame(data['results'])
-                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
-                    df.set_index('timestamp', inplace=True)
-                    df = df.rename(columns={'o': 'Open', 'h': 'High', 'l': 'Low', 'c': 'Close', 'v': 'Volume'})
-                    return df
-            return None
-        except Exception as e:
-            logger.warning(f"Polygon.io fetch failed: {str(e)}")
-            return None
-
-    @staticmethod
-    @st.cache_data(ttl=Config.CACHE_TTL)
-    def fetch_alpha_vantage_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Fetch data from Alpha Vantage"""
-        try:
-            ts = TimeSeries(key=Config.ALPHA_VANTAGE_API_KEY)
-            data, _ = ts.get_daily(symbol=symbol, outputsize='full')
-            df = pd.DataFrame(data).rename(columns={
-                '1. open': 'Open',
-                '2. high': 'High',
-                '3. low': 'Low',
-                '4. close': 'Close',
-                '5. volume': 'Volume'
-            })
-            return df
-        except Exception as e:
-            logger.warning(f"Alpha Vantage fetch failed: {str(e)}")
-            return None
-
-class EconomicIndicators:
-    def __init__(self):
-        self._initialize_indicators()
+def main():
+    st.set_page_config(
+        page_title="HummingBird v2-dev",
+        page_icon="🐦",
+        layout="wide"
+    )
     
-    def _initialize_indicators(self):
-        """Initialize FRED indicators with descriptions and frequencies"""
-        self.indicator_details = {
-            'GDP': {
-                'series_id': 'GDP',
-                'description': 'Gross Domestic Product',
-                'frequency': 'Quarterly',
-                'units': 'Billions of Dollars'
-            },
-            'UNRATE': {
-                'series_id': 'UNRATE',
-                'description': 'Unemployment Rate',
-                'frequency': 'Monthly',
-                'units': 'Percent'
-            },
-            'CPIAUCSL': {
-                'series_id': 'CPIAUCSL',
-                'description': 'Consumer Price Index',
-                'frequency': 'Monthly',
-                'units': 'Index 1982-1984=100'
-            },
-            'DFF': {
-                'series_id': 'DFF',
-                'description': 'Federal Funds Rate',
-                'frequency': 'Daily',
-                'units': 'Percent'
-            },
-            'IEF': {
-                'series_id': 'IEF',
-                'description': 'iShares 7-10 Year Treasury Bond ETF',
-                'frequency': 'Daily',
-                'units': 'USD'
-            }
-        }
+    try:
+        # Display branding
+        st.markdown("""
+            <div style='text-align: center;'>
+                <h1>🐦 HummingBird v2Dev</h1>
+                <p><i>Digital Asset Stock Forecasting with Economic Indicators</i></p>
+                <p>AvaResearch LLC - A Black Collar Production</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Sidebar - Model Selection
+        st.sidebar.header("🔮 Select Forecasting Model")
+        selected_model = st.sidebar.selectbox(
+            "Available Models",
+            list(MODEL_DESCRIPTIONS.keys())
+        )
 
-    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
-        """Public wrapper for fetching indicator data"""
-        return self._fetch_indicator_data(indicator)
-
-    @staticmethod
-    @st.cache_data(ttl=Config.CACHE_TTL)
-    def _fetch_indicator_data(indicator: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch and cache indicator data"""
-        try:
-            if indicator == 'IEF':
-                df = EconomicIndicators._get_ief_data()
-            else:
-                fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
-                indicator_details = EconomicIndicators._get_indicator_details()
-                indicator_info = indicator_details[indicator]
-                df = EconomicIndicators._get_fred_data(fred, indicator_info)
+        # Display model information
+        if selected_model in MODEL_DESCRIPTIONS:
+            model_info = MODEL_DESCRIPTIONS[selected_model]
+            st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
             
-            if df is not None:
-                df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
-                return df
+            # Display development status
+            status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
+            st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
+                              unsafe_allow_html=True)
             
-            raise ValueError(f"No data available for {indicator}")
+            # Display confidence rating
+            confidence = model_info['confidence_rating']
+            color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
+            st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
+                              unsafe_allow_html=True)
             
-        except Exception as e:
-            st.error(f"Error fetching {indicator} data: {str(e)}")
-            return None
+            # Display use cases and limitations
+            st.sidebar.markdown("**Best Use Cases:**")
+            for use_case in model_info['best_use_cases']:
+                st.sidebar.markdown(f"- {use_case}")
+            
+            st.sidebar.markdown("**Limitations:**")
+            for limitation in model_info['limitations']:
+                st.sidebar.markdown(f"- {limitation}")
 
-    @staticmethod
-    def _get_indicator_details():
-        """Get indicator details dictionary"""
-        return {
-            'GDP': {'series_id': 'GDP', 'description': 'Gross Domestic Product', 'frequency': 'Quarterly'},
-            'UNRATE': {'series_id': 'UNRATE', 'description': 'Unemployment Rate', 'frequency': 'Monthly'},
-            'CPIAUCSL': {'series_id': 'CPIAUCSL', 'description': 'Consumer Price Index', 'frequency': 'Monthly'},
-            'DFF': {'series_id': 'DFF', 'description': 'Federal Funds Rate', 'frequency': 'Daily'},
-            'IEF': {'series_id': 'IEF', 'description': 'iShares 7-10 Year Treasury Bond ETF', 'frequency': 'Daily'}
-        }
-
-    @staticmethod
-    def _get_ief_data() -> Optional[pd.DataFrame]:
-        """Get IEF data with multiple source fallback"""
-        try:
-            # Try Polygon first
-            df = DataSourceManager.fetch_polygon_data('IEF', Config.START, Config.TODAY)
-            if df is not None:
-                return df[['Close']].reset_index().rename(columns={'timestamp': 'index'})
-
-            # Try Alpha Vantage
-            df = DataSourceManager.fetch_alpha_vantage_data('IEF')
-            if df is not None:
-                return df[['Close']].reset_index().rename(columns={'date': 'index'})
-
-            # Fallback to Yahoo Finance
-            data = yf.download('IEF', start=Config.START, end=Config.TODAY)
-            if not data.empty:
-                return pd.DataFrame(data['Close']).reset_index()
-
-            return None
-        except Exception as e:
-            logger.warning(f"Error fetching IEF data: {str(e)}")
-            return None
-
-    @staticmethod
-    def _get_fred_data(fred: fredapi.Fred, indicator_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Get data from FRED"""
-        series_id = indicator_info['series_id']
-        data = fred.get_series(
-            series_id,
-            observation_start=Config.START,
-            observation_end=Config.TODAY,
-            frequency='d'
+        # Sidebar - Data Sources Information
+        st.sidebar.header("📊 Data Sources")
+        for source, description in Config.DATA_SOURCES.items():
+            st.sidebar.markdown(f"**{source}**: {description}")
+        
+        # Sidebar - Economic Indicators
+        st.sidebar.header("📈 Economic Indicators")
+        selected_indicator = st.sidebar.selectbox(
+            "Select Economic Indicator",
+            ['None'] + list(Config.INDICATORS.keys()),
+            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
         
-        df = pd.DataFrame(data).reset_index()
-        df.columns = ['index', 'value']
+        # Sidebar - Real Estate Indicators
+        st.sidebar.header("🏠 Real Estate Indicators")
+        selected_re_indicator = st.sidebar.selectbox(
+            "Select Real Estate Indicator",
+            ['None'] + list(Config.REAL_ESTATE_INDICATORS.keys()),
+            format_func=lambda x: Config.REAL_ESTATE_INDICATORS[x]['description'] if x != 'None' and x in Config.REAL_ESTATE_INDICATORS else x
+        )
+
+        if selected_re_indicator != 'None':
+            re_info = Config.REAL_ESTATE_INDICATORS[selected_re_indicator]
+            st.sidebar.markdown(f"""
+                **Description:** {re_info['description']}  
+                **Status:** ⚠️ {re_info['status']}
+            """)
+
+        # Input Section
+        col1, col2, col3 = st.columns(3)
         
-        if indicator_info['frequency'] != 'Daily':
-            df['value'] = df['value'].ffill()
-            
-        return df
-
-    def get_indicator_info(self, indicator: str) -> dict:
-        """Get metadata for an indicator"""
-        return self.indicator_details.get(indicator, {})
-
-    def analyze_indicator(self, df: pd.DataFrame, indicator: str) -> dict:
-        """Analyze an economic indicator and return key statistics"""
-        if df is None or df.empty:
-            return {}
-            
-        try:
-            stats = {
-                'current_value': df['value'].iloc[-1],
-                'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
-                'change_1m': (df['value'].iloc[-1] - df['value'].iloc[-30]) / df['value'].iloc[-30] * 100 if len(df) >= 30 else None,
-                'min_value': df['value'].min(),
-                'max_value': df['value'].max(),
-                'avg_value': df['value'].mean(),
-                'std_dev': df['value'].std()
-            }
-            return stats
-        except Exception as e:
-            st.error(f"Error analyzing {indicator}: {str(e)}")
-            return {}
-
-class AssetDataFetcher:
-    def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Public wrapper for fetching stock data"""
-        return self._fetch_stock_data(symbol)
-
-    @staticmethod
-    @st.cache_data(ttl=Config.CACHE_TTL)
-    def _fetch_stock_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch and cache stock data"""
-        try:
-            # Try Polygon first
-            df = DataSourceManager.fetch_polygon_data(symbol, Config.START, Config.TODAY)
-            if df is not None:
-                return df
-
-            # Try Alpha Vantage
-            df = DataSourceManager.fetch_alpha_vantage_data(symbol)
-            if df is not None:
-                return df
-
-            # Fallback to Yahoo Finance
-            ticker = yf.Ticker(symbol)
-            data = ticker.history(period="1y", interval="1d")
-            
-            if not data.empty:
-                data.index = pd.to_datetime(data.index).tz_localize(None)
-                return data
-                
-            raise ValueError(f"No data available for {symbol}")
-            
-        except Exception as e:
-            st.error(f"Error fetching stock data: {str(e)}")
-            return None
-
-    def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
-        """Public wrapper for fetching crypto data"""
-        return self._fetch_crypto_data(symbol)
-
-    @staticmethod
-    @st.cache_data(ttl=Config.CACHE_TTL)
-    def _fetch_crypto_data(symbol: str) -> Optional[pd.DataFrame]:
-        """Internal method to fetch and cache crypto data"""
-        try:
-            cg = CoinGeckoAPI()
-            # Ensure the correct ID is used for 'xrp'
-            coin_id = 'ripple' if symbol.lower() == 'xrp' else symbol
-            data = cg.get_coin_market_chart_by_id(
-                id=coin_id,
-                vs_currency='usd',
-                days=365,
-                interval='daily'
+        with col1:
+            asset_type = st.selectbox(
+                "Select Asset Type",
+                Config.ASSET_TYPES,
+                help="Choose between Stocks and Cryptocurrency"
             )
-            
-            if data:
-                prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
-                volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
+        
+        with col2:
+            if asset_type == "Stocks":
+                symbol = st.text_input(
+                    "Enter Stock Symbol",
+                    Config.DEFAULT_TICKER,
+                    help="Enter a valid stock symbol (e.g., AAPL, MSFT)"
+                ).upper()
+            else:
+                symbol = st.text_input(
+                    "Enter Cryptocurrency ID",
+                    Config.DEFAULT_CRYPTO,
+                    help="Enter a valid cryptocurrency ID (e.g., bitcoin, ethereum)"
+                ).lower()
+        
+        with col3:
+            periods = st.slider(
+                "Forecast Period (days)",
+                7, 90, Config.DEFAULT_PERIODS,
+                help="Select the number of days to forecast"
+            )
+        
+        # Generate Forecast
+        if st.button("🚀 Generate Forecast"):
+            with st.spinner('Loading data...'):
+                fetcher = AssetDataFetcher()
+                data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
                 
-                df = prices_df.merge(volumes_df[['timestamp', 'Volume']], on='timestamp', how='left')
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                df.set_index('timestamp', inplace=True)
-                df.index = df.index.tz_localize(None)
-                
-                df['Open'] = df['Close'].shift(1)
-                df['High'] = df['Close']
-                df['Low'] = df['Close']
-                df = df.ffill()
-                
-                return df
-            
-            return None
-            
-        except Exception as e:
-            st.error(f"Error fetching crypto data: {str(e)}")
-            return None
+                # Get economic indicator data
+                economic_data = None
+                if selected_indicator != 'None':
+                    economic_indicators = EconomicIndicators()
+                    economic_data = economic_indicators.get_indicator_data(selected_indicator)
+                    if economic_data is not None:
+                        display_economic_indicators(economic_data, selected_indicator, economic_indicators)
 
-class RealEstateIndicators:
-    """Placeholder class for Real Estate Indicators"""
-    def __init__(self):
-        self.indicator_details = Config.REAL_ESTATE_INDICATORS
+                # Display Real Estate Indicator status if selected
+                if selected_re_indicator != 'None':
+                    st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
+                
+                if data is not None:
+                    if selected_model != "Prophet":
+                        st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+                    
+                    with st.spinner('Generating forecast...'):
+                        forecast, error = prophet_forecast(data, periods, economic_data)
+                        
+                        if error:
+                            st.error(f"Forecasting error: {error}")
+                        elif forecast is not None:
+                            display_metrics(data, forecast, asset_type, symbol)
+                            
+                            fig = create_forecast_plot(data, forecast, "Prophet", symbol)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            with st.expander("View Detailed Forecast Data"):
+                                st.dataframe(forecast)
+                else:
+                    st.error(f"Could not load data for {symbol}. Please verify the symbol.")
     
-    def get_indicator_info(self, indicator: str) -> dict:
-        """Get metadata for a real estate indicator"""
-        return self.indicator_details.get(indicator, {})
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
+        st.exception(e)
+    
+    finally:
+        display_footer()
+
+if __name__ == "__main__":
+    main()
