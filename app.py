@@ -28,7 +28,7 @@ def main():
         # Display branding
         st.markdown("""
             <div style='text-align: center;'>
-                <h1>🐦 HummingBird v2</h1>
+                <h1>🐦 HummingBird v2Dev</h1>
                 <p><i>Digital Asset Stock Forecasting with Economic Indicators</i></p>
                 <p>AvaResearch LLC - A Black Collar Production</p>
             </div>
