@@ -42,6 +42,9 @@ def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
         # Sort by date
         prophet_df = prophet_df.sort_values('ds').reset_index(drop=True)
         
+        # Ensure 'y' is float
+        prophet_df['y'] = prophet_df['y'].astype(float)
+        
         return prophet_df
     
     except Exception as e:
@@ -65,9 +68,8 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         
         # Add economic indicator if provided
         if economic_data is not None:
-            economic_df = economic_data.copy()
-            economic_df.columns = ['ds', 'regressor']
-            economic_df['ds'] = pd.to_datetime(economic_df['ds']).dt.tz_localize(None)
+            economic_df = prepare_data_for_prophet(economic_data)
+            economic_df = economic_df.rename(columns={'y': 'regressor'})
             model.add_regressor('regressor')
             prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
             prophet_df['regressor'].fillna(method='ffill', inplace=True)
@@ -88,29 +90,25 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         
         # Apply conservative growth constraints
         current_price = prophet_df['y'].iloc[-1]
-        avg_daily_return = np.log(prophet_df['y']).diff().mean()
-        daily_std = np.log(prophet_df['y']).diff().std()
+        historical_volatility = prophet_df['y'].pct_change().std()
+        max_daily_change = min(historical_volatility * 2, 0.05)  # Cap at 5%
         
-        days_forward = np.arange(len(forecast) - len(prophet_df))
-        max_expected_growth = np.exp((avg_daily_return + 2 * daily_std) * days_forward)
-        min_expected_growth = np.exp((avg_daily_return - 2 * daily_std) * days_forward)
-        
-        future_idx = len(prophet_df)
-        if future_idx < len(forecast):
-            forecast.loc[future_idx:, 'yhat'] = current_price * np.clip(
-                forecast.loc[future_idx:, 'yhat'] / current_price,
-                min_expected_growth.min(),
-                max_expected_growth.max()
-            )
-            
-            # Adjust confidence intervals
-            forecast.loc[future_idx:, 'yhat_lower'] = forecast.loc[future_idx:, 'yhat'] * 0.9
-            forecast.loc[future_idx:, 'yhat_upper'] = forecast.loc[future_idx:, 'yhat'] * 1.1
+        forecast['yhat'] = forecast['yhat'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
         
         # Add actual values
         forecast['actual'] = np.nan
-        mask = forecast['ds'].isin(prophet_df['ds'])
-        forecast.loc[mask, 'actual'] = prophet_df['y'].values
+        forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y']
         
         return forecast, None
         
