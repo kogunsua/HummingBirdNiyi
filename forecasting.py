@@ -230,19 +230,23 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
     """Display key metrics and statistics"""
     try:
+        # Enhanced logging
+        logger.info(f"Data shape: {data.shape}")
+        logger.info(f"Forecast shape: {forecast.shape}")
+        
         # Get latest values ensuring proper column access
         if isinstance(data, pd.DataFrame):
             if 'Close' in data.columns:
-                latest_price = data['Close'].iloc[-1]
-                price_change = data['Close'].pct_change().iloc[-1] * 100
+                latest_price = float(data['Close'].iloc[-1])
+                price_change = float(data['Close'].pct_change().iloc[-1] * 100)
             else:
-                latest_price = data.iloc[-1, 0]
-                price_change = (data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100
+                latest_price = float(data.iloc[-1, 0])
+                price_change = float((data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100)
         else:
-            latest_price = data.iloc[-1]
-            price_change = (data.iloc[-1] / data.iloc[-2] - 1) * 100
+            latest_price = float(data.iloc[-1])
+            price_change = float((data.iloc[-1] / data.iloc[-2] - 1) * 100)
 
-        forecast_price = forecast['yhat'].iloc[-1]
+        forecast_price = float(forecast['yhat'].iloc[-1])
         forecast_change = ((forecast_price - latest_price) / latest_price) * 100
 
         # Create metrics display
@@ -251,27 +255,29 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         with col1:
             st.metric(
                 "Current Price",
-                f"${latest_price:.2f}",
-                f"{price_change:.2f}%"
+                f"${latest_price:,.2f}",
+                f"{price_change:+.2f}%"
             )
 
         with col2:
             st.metric(
                 f"Forecast Price ({forecast['ds'].iloc[-1].strftime('%Y-%m-%d')})",
-                f"${forecast_price:.2f}",
-                f"{forecast_change:.2f}%"
+                f"${forecast_price:,.2f}",
+                f"{forecast_change:+.2f}%"
             )
 
         with col3:
             confidence_range = forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]
             st.metric(
                 "Forecast Range",
-                f"${confidence_range:.2f}",
+                f"${confidence_range:,.2f}",
                 f"\u00b1{(confidence_range/forecast_price*100/2):.2f}%"
             )
 
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
+        logger.error(f"Data type: {type(data)}")
+        logger.error(f"Data columns: {data.columns if isinstance(data, pd.DataFrame) else 'Not a DataFrame'}")
         st.error(f"Error displaying metrics: {str(e)}")
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
