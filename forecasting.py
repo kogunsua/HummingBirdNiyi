@@ -328,3 +328,44 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     """Display economic indicator information and analysis"""
     try:
         st.subheader("📊 Economic Indicator Analysis")
+        
+        # Get indicator details
+        indicator_info = economic_indicators.get_indicator_info(indicator)
+        
+        # Display indicator information
+        st.markdown(f"""
+            **Indicator:** {indicator_info.get('description', indicator)}  
+            **Frequency:** {indicator_info.get('frequency', 'N/A')}  
+            **Units:** {indicator_info.get('units', 'N/A')}
+        """)
+        
+        # Get and display analysis
+        analysis = economic_indicators.analyze_indicator(data, indicator)
+        if analysis:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Current Value",
+                    f"{analysis['current_value']:.2f}",
+                    f"{analysis['change_1d']:.2f}% (1d)"
+                )
+            
+            with col2:
+                if analysis.get('change_1m') is not None:
+                    st.metric(
+                        "Monthly Change",
+                        f"{analysis['current_value']:.2f}",
+                        f"{analysis['change_1m']:.2f}% (1m)"
+                    )
+            
+            with col3:
+                st.metric(
+                    "Average Value",
+                    f"{analysis['avg_value']:.2f}",
+                    f"σ: {analysis['std_dev']:.2f}"
+                )
+
+    except Exception as e:
+        logger.error(f"Error displaying economic indicators: {str(e)}")
+        st.error(f"Error displaying economic indicators: {str(e)}")
