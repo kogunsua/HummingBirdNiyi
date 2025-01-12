@@ -267,7 +267,7 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
             )
 
         with col3:
-            confidence_range = forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]
+            confidence_range = float(forecast['yhat_upper'].iloc[-1]) - float(forecast['yhat_lower'].iloc[-1])
             st.metric(
                 "Forecast Range",
                 f"${confidence_range:,.2f}",
