@@ -12,34 +12,27 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare data for Prophet model"""
-    # Reset index and ensure it's named correctly
+    """Prepare data for Prophet model."""
     df = df.reset_index()
     
-    # Rename columns to Prophet format
     if 'Date' in df.columns:
         df = df.rename(columns={'Date': 'ds'})
     elif 'timestamp' in df.columns:
         df = df.rename(columns={'timestamp': 'ds'})
     else:
-        # If index was unnamed, the reset_index creates a column named 'index'
         df = df.rename(columns={'index': 'ds'})
     
-    # Ensure Close price is named 'y' for Prophet
     df = df.rename(columns={'Close': 'y'})
     
-    # Ensure datetime is timezone naive
     df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
     
-    # Select only required columns
     df = df[['ds', 'y']]
     
     return df
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Generate forecasts using Prophet with optional economic indicators"""
+    """Generate forecasts using Prophet with optional economic indicators."""
     try:
-        # Prepare data for Prophet
         df = prepare_data_for_prophet(data)
         
         model = Prophet(daily_seasonality=False, 
@@ -58,7 +51,6 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         
         model.fit(df)
         
-        # Create future dataframe starting from last actual date
         last_date = df['ds'].max()
         future = model.make_future_dataframe(periods=periods)
         future = future[future['ds'] > last_date]
@@ -69,12 +61,10 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         
         forecast = model.predict(future)
         
-        # Apply realistic constraints
         current_price = df['y'].iloc[-1]
         historical_volatility = df['y'].pct_change().std()
         max_daily_change = historical_volatility * 2
         
-        # Apply constraints to forecast
         forecast['yhat'] = forecast['yhat'].clip(
             lower=current_price * (1 - max_daily_change),
             upper=current_price * (1 + max_daily_change)
@@ -88,7 +78,6 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             upper=current_price * (1 + max_daily_change)
         )
         
-        # Add actual values
         forecast['actual'] = np.nan
         actuals_idx = forecast['ds'].isin(df['ds'])
         forecast.loc[actuals_idx, 'actual'] = df['y'].values
@@ -101,15 +90,13 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         return None, str(e)
 
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
-    """Create an interactive plot with historical data and forecast"""
+    """Create an interactive plot with historical data and forecast."""
     try:
         fig = go.Figure()
 
-        # Historical Data
         historical_dates = data.index if isinstance(data.index, pd.DatetimeIndex) else pd.to_datetime(data['Date'])
         historical_values = data['Close']
 
-        # Add historical price trace
         fig.add_trace(go.Scatter(
             x=historical_dates,
             y=historical_values,
@@ -118,7 +105,6 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br><b>Price</b>: $%{y:.2f}<extra></extra>'
         ))
 
-        # Add forecast trace
         fig.add_trace(go.Scatter(
             x=forecast['ds'],
             y=forecast['yhat'],
@@ -127,7 +113,6 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br><b>Forecast</b>: $%{y:.2f}<extra></extra>'
         ))
 
-        # Add confidence interval
         fig.add_trace(go.Scatter(
             x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
             y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
@@ -138,7 +123,6 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             hoverinfo='skip'
         ))
 
-        # Update layout
         fig.update_layout(
             title=dict(
                 text=f'{symbol} Price Forecast',
@@ -162,7 +146,6 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             height=600
         )
 
-        # Add range slider
         fig.update_xaxes(rangeslider_visible=True)
 
         return fig
@@ -173,13 +156,11 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         return None
 
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display key metrics and statistics"""
+    """Display key metrics and statistics."""
     try:
-        # Enhanced logging
         logger.info(f"Data shape: {data.shape}")
         logger.info(f"Forecast shape: {forecast.shape}")
         
-        # Get latest values ensuring proper column access
         if isinstance(data, pd.DataFrame):
             if 'Close' in data.columns:
                 latest_price = float(data['Close'].iloc[-1])
@@ -194,7 +175,6 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         forecast_price = float(forecast['yhat'].iloc[-1])
         forecast_change = ((forecast_price - latest_price) / latest_price) * 100
 
-        # Create metrics display
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -226,21 +206,18 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         st.error(f"Error displaying metrics: {str(e)}")
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
-    """Display economic indicator information and analysis"""
+    """Display economic indicator information and analysis."""
     try:
         st.subheader("📊 Economic Indicator Analysis")
         
-        # Get indicator details
         indicator_info = economic_indicators.get_indicator_info(indicator)
         
-        # Display indicator information
         st.markdown(f"""
             **Indicator:** {indicator_info.get('description', indicator)}  
             **Frequency:** {indicator_info.get('frequency', 'N/A')}  
             **Units:** {indicator_info.get('units', 'N/A')}
         """)
         
-        # Get and display analysis
         analysis = economic_indicators.analyze_indicator(data, indicator)
         if analysis:
             col1, col2, col3 = st.columns(3)
