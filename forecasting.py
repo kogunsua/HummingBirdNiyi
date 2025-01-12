@@ -12,49 +12,53 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
-    """Prepare data for Prophet model"""
+    """Prepare data for Prophet model with proper date handling"""
     try:
         # Make a copy to avoid modifying original data
         data = df.copy()
-        
-        # Convert DateTimeIndex to column if needed
+
+        # Handle DateTimeIndex if present
         if isinstance(data.index, pd.DatetimeIndex):
-            data = data.reset_index()
-            data.rename(columns={'index': 'ds'}, inplace=True)
+            prophet_df = pd.DataFrame({
+                'ds': data.index,
+                'y': data['Close']
+            })
         else:
-            # Try to find date column
-            date_cols = [col for col in data.columns if col in ['Date', 'timestamp']]
-            if date_cols:
-                data.rename(columns={date_cols[0]: 'ds'}, inplace=True)
+            # Look for date column if not in index
+            date_col = None
+            for col in data.columns:
+                if col in ['Date', 'date', 'timestamp', 'Timestamp']:
+                    date_col = col
+                    break
+            
+            if date_col:
+                prophet_df = pd.DataFrame({
+                    'ds': data[date_col],
+                    'y': data['Close']
+                })
+            else:
+                raise ValueError("No date column found in data")
+
+        # Ensure datetime and remove timezone
+        prophet_df['ds'] = pd.to_datetime(prophet_df['ds']).dt.tz_localize(None)
         
-        # Ensure 'y' column exists (from 'Close' price)
-        if 'Close' in data.columns:
-            data['y'] = data['Close'].astype(float)
-        else:
-            raise ValueError("No 'Close' price column found in data")
+        # Ensure numeric type for y
+        prophet_df['y'] = prophet_df['y'].astype(float)
         
-        # Convert to datetime and remove timezone info
-        data['ds'] = pd.to_datetime(data['ds'])
-        if data['ds'].dt.tz is not None:
-            data['ds'] = data['ds'].dt.tz_localize(None)
+        # Sort by date and reset index
+        prophet_df = prophet_df.sort_values('ds').reset_index(drop=True)
         
-        # Select only required columns
-        prophet_data = pd.DataFrame({
-            'ds': data['ds'],
-            'y': data['y']
-        })
+        # Log data info for debugging
+        logger.info(f"Prophet DataFrame shape: {prophet_df.shape}")
+        logger.info(f"Prophet DataFrame columns: {prophet_df.columns.tolist()}")
+        logger.info(f"Prophet DataFrame dtypes:\n{prophet_df.dtypes}")
+        logger.info(f"First few rows:\n{prophet_df.head()}")
         
-        # Remove any duplicates and sort by date
-        prophet_data = prophet_data.drop_duplicates('ds').sort_values('ds')
-        
-        # Reset index
-        prophet_data = prophet_data.reset_index(drop=True)
-        
-        return prophet_data
-        
+        return prophet_df
+
     except Exception as e:
-        logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
-        raise e
+        logger.error(f"Error preparing data: {str(e)}")
+        raise
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecasts using Prophet with optional economic indicators"""
@@ -83,15 +87,15 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         # Fit model
         model.fit(df)
         
-        # Generate future dates
+        # Make future dataframe
         future = model.make_future_dataframe(periods=periods)
         
-        # Add economic indicator to future dates if provided
+        # Add economic indicator to future if available
         if economic_data is not None:
             future = future.merge(economic_df, on='ds', how='left')
             future['regressor'].fillna(method='ffill', inplace=True)
         
-        # Make prediction
+        # Generate forecast
         forecast = model.predict(future)
         
         # Add actual values
