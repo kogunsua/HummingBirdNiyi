@@ -8,7 +8,7 @@ class Config:
     START = START_DATE.strftime("%Y-%m-%d")
     CACHE_TTL = 3600
     DEFAULT_TICKER = "MSFT"
-    DEFAULT_CRYPTO = "ripple"
+    DEFAULT_CRYPTO = "xrp"
     DEFAULT_PERIODS = 30
     ASSET_TYPES = ["Stocks", "Cryptocurrency"]
     
