@@ -21,7 +21,7 @@ def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
         if isinstance(data.index, pd.DatetimeIndex):
             prophet_df = pd.DataFrame({
                 'ds': data.index,
-                'y': data['Close']
+                'y': data['Close'].squeeze()  # Ensure y is 1-dimensional
             })
         else:
             # Look for date column if not in index
@@ -34,7 +34,7 @@ def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
             if date_col:
                 prophet_df = pd.DataFrame({
                     'ds': data[date_col],
-                    'y': data['Close']
+                    'y': data['Close'].squeeze()  # Ensure y is 1-dimensional
                 })
             else:
                 raise ValueError("No date column found in data")
