@@ -94,17 +94,15 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         logger.info(f"Current price: {current_price}")
         logger.info(f"Historical std: {historical_std}")
         logger.info(f"Max historical daily return: {max_historical_daily_return}")
+        
+        # Calculate historical volatility
+        historical_volatility = historical_daily_returns.std()
 
-        # Initialize Prophet with conservative parameters
+        # Initialize Prophet with stricter parameters
         model = Prophet(
-            changepoint_prior_scale=0.001,     # Very conservative trend changes
-            changepoint_range=0.8,             # Use 80% of data for changepoints
-            n_changepoints=25,                 # Limit number of changepoints
-            growth='linear',                   # Linear growth
-            daily_seasonality=False,           # Disable daily seasonality
-            weekly_seasonality=True,           # Enable weekly seasonality
-            yearly_seasonality=True,           # Enable yearly seasonality
-            seasonality_mode='multiplicative'  # Better for stock prices
+            changepoint_prior_scale=0.0005,    # Even more conservative
+            n_changepoints=10,                 # Very limited changepoints
+            seasonality_mode='additive'        # More stable forecasts
         )
 
         # Add monthly seasonality
@@ -143,29 +141,33 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         # Generate initial forecast
         forecast = model.predict(future)
 
-        # Calculate realistic bounds based on historical volatility
-        max_expected_return = max_historical_daily_return * np.sqrt(periods)  # Scaled by square root of time
-        min_expected_return = -max_expected_return
-        
-        # Calculate maximum and minimum allowed prices
-        max_allowed_price = current_price * (1 + max_expected_return)
-        min_allowed_price = current_price * (1 + min_expected_return)
-        
-        logger.info(f"Max allowed price: {max_allowed_price}")
-        logger.info(f"Min allowed price: {min_allowed_price}")
+        # Daily movement constraints
+        max_daily_move = min(0.05, historical_volatility * 2)  # Cap at 5% daily move
 
-        # Apply constraints to forecast
-        forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_price, upper=max_allowed_price)
-        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_allowed_price, upper=max_allowed_price)
-        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_price, upper=max_allowed_price)
+        # Progressive constraints
+        last_known_price = current_price
+        future_start_idx = len(prophet_df)
+
+        for i in range(future_start_idx, len(forecast)):
+            max_up_move = last_known_price * (1 + max_daily_move)
+            max_down_move = last_known_price * (1 - max_daily_move)
+            forecast.loc[i, 'yhat'] = np.clip(forecast.loc[i, 'yhat'], max_down_move, max_up_move)
+            last_known_price = forecast.loc[i, 'yhat']
 
         # Apply dampening to future values
-        future_idx = len(prophet_df)
-        if future_idx < len(forecast):
-            dampening_factors = np.exp(-np.arange(len(forecast) - future_idx) * 0.05)
-            forecast.loc[future_idx:, 'yhat'] = current_price + (forecast.loc[future_idx:, 'yhat'] - current_price) * dampening_factors
-            forecast.loc[future_idx:, 'yhat_lower'] = current_price + (forecast.loc[future_idx:, 'yhat_lower'] - current_price) * dampening_factors
-            forecast.loc[future_idx:, 'yhat_upper'] = current_price + (forecast.loc[future_idx:, 'yhat_upper'] - current_price) * dampening_factors
+        recent_trend = prophet_df['y'].iloc[-1] - prophet_df['y'].iloc[-2]
+        if abs(recent_trend) > 20:
+            trend_dampening = 0.8
+            for days_out in range(1, periods + 1):
+                dampening_factor = trend_dampening ** (days_out / 10)
+                forecast.loc[future_start_idx + days_out - 1, 'yhat'] = current_price + (forecast.loc[future_start_idx + days_out - 1, 'yhat'] - current_price) * dampening_factor
+
+        # Final validation
+        max_allowed_forecast = current_price * (1 + min(0.5, historical_volatility * np.sqrt(periods)))
+        min_allowed_forecast = current_price * (1 - min(0.5, historical_volatility * np.sqrt(periods)))
+        forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
 
         # Add actual values
         forecast['actual'] = np.nan
