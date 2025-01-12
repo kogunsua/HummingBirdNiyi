@@ -52,6 +52,8 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         
         # Select only required columns and sort by date
         prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
+        # Drop NaN values
+        prophet_df = prophet_df.dropna()
         
         logger.info(f"Prepared Prophet dataframe shape: {prophet_df.shape}")
         logger.info(f"Prophet dataframe columns: {prophet_df.columns.tolist()}")
@@ -86,13 +88,18 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         logger.info(f"Prophet input data shape: {prophet_df.shape}")
         logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
 
-        # Initialize Prophet model
+        # Initialize Prophet model with more conservative parameters
         model = Prophet(
-            daily_seasonality=True,
-            weekly_seasonality=True,
-            yearly_seasonality=True,
-            changepoint_prior_scale=0.05,
-            interval_width=0.95
+            changepoint_prior_scale=0.001,  # Very conservative
+            n_changepoints=25,              # Limit changepoints
+            growth='linear'                 # Linear growth
+        )
+
+        # Add monthly seasonality
+        model.add_seasonality(
+            name='monthly',
+            period=30.5,
+            fourier_order=5
         )
 
         # Add economic indicator if available
@@ -142,6 +149,21 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         # Add actual values to forecast dataframe
         forecast['actual'] = np.nan
         forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
+
+        # Get current price
+        current_price = prophet_df['y'].iloc[-1]
+        max_price = prophet_df['y'].max()
+        min_price = prophet_df['y'].min()
+
+        # Define realistic price constraints
+        max_allowed_price = max(current_price * 2, max_price * 1.5)  # Max 100% increase
+        min_allowed_price = min(current_price * 0.5, min_price * 0.8)  # Max 50% decrease
+
+        # Clip forecast values to realistic constraints
+        forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_price, upper=max_allowed_price)
+
+        # Apply trend dampening
+        forecast['yhat'] = current_price + (forecast['yhat'] - current_price) * 0.5
         
         logger.info("Forecast completed successfully")
         return forecast, None
