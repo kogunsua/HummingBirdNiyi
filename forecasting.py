@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
     """Prepare data for Prophet model"""
     try:
-        # Make a copy of input data
+        # Make a copy of inputs data
         data = df.copy()
         
         # If data is a DataFrame with DateTimeIndex
