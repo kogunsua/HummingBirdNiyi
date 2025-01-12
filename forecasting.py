@@ -13,34 +13,28 @@ logger = logging.getLogger(__name__)
 
 def prepare_data_for_prophet(df: pd.DataFrame) -> pd.DataFrame:
     """Prepare data for Prophet model"""
-    try:
-        # Create a copy of the DataFrame
-        data = df.copy()
-
-        # If the index is a datetime index, reset it and keep as 'ds'
-        if isinstance(data.index, pd.DatetimeIndex):
-            data = data.reset_index()
-            data = data.rename(columns={'index': 'ds'})
-        else:
-            # Try to find the date column
-            date_col = [col for col in data.columns if col.lower() in ['date', 'timestamp']][0]
-            data = data.rename(columns={date_col: 'ds'})
-
-        # Ensure 'ds' column is datetime type and remove timezone
-        data['ds'] = pd.to_datetime(data['ds']).dt.tz_localize(None)
-
-        # Rename Close price column to 'y' for Prophet
-        data['y'] = data['Close']
-
-        # Select only required columns and sort
-        data = data[['ds', 'y']].copy()
-        data = data.sort_values('ds')
-
-        return data
-
-    except Exception as e:
-        logger.error(f"Error preparing data: {str(e)}")
-        raise e
+    # Reset index and ensure it's named correctly
+    df = df.reset_index()
+    
+    # Rename columns to Prophet format
+    if 'Date' in df.columns:
+        df = df.rename(columns={'Date': 'ds'})
+    elif 'timestamp' in df.columns:
+        df = df.rename(columns={'timestamp': 'ds'})
+    else:
+        # If index was unnamed, the reset_index creates a column named 'index'
+        df = df.rename(columns={'index': 'ds'})
+    
+    # Ensure Close price is named 'y' for Prophet
+    df = df.rename(columns={'Close': 'y'})
+    
+    # Ensure datetime is timezone naive
+    df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
+    
+    # Select only required columns
+    df = df[['ds', 'y']]
+    
+    return df
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecasts using Prophet with optional economic indicators"""
@@ -48,22 +42,12 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         # Prepare data for Prophet
         df = prepare_data_for_prophet(data)
         
-        # Calculate current stats
-        current_price = df['y'].iloc[-1]
-        historical_volatility = df['y'].pct_change().std()
+        model = Prophet(daily_seasonality=False, 
+                       weekly_seasonality=True,
+                       yearly_seasonality=True,
+                       changepoint_prior_scale=0.01,
+                       interval_width=0.95)
         
-        # Configure Prophet model
-        model = Prophet(
-            daily_seasonality=False,
-            weekly_seasonality=True,
-            yearly_seasonality=True,
-            changepoint_prior_scale=0.01,
-            interval_width=0.95,
-            seasonality_mode='multiplicative',
-            n_changepoints=25
-        )
-        
-        # Add economic indicator if provided
         if economic_data is not None:
             economic_df = economic_data.copy()
             economic_df.columns = ['ds', 'regressor']
@@ -72,48 +56,37 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             df = df.merge(economic_df, on='ds', how='left')
             df['regressor'].fillna(method='ffill', inplace=True)
         
-        # Fit the model
         model.fit(df)
         
-        # Create future dates starting from last actual date
+        # Create future dataframe starting from last actual date
         last_date = df['ds'].max()
         future = model.make_future_dataframe(periods=periods)
-        future = future[future['ds'] >= last_date].copy()
+        future = future[future['ds'] > last_date]
         
-        # Add economic indicator to future if provided
         if economic_data is not None:
             future = future.merge(economic_df, on='ds', how='left')
             future['regressor'].fillna(method='ffill', inplace=True)
         
-        # Generate forecast
         forecast = model.predict(future)
         
-        # Apply realistic constraints based on historical volatility
-        max_daily_change = historical_volatility * 2  # 2 standard deviations
+        # Apply realistic constraints
+        current_price = df['y'].iloc[-1]
+        historical_volatility = df['y'].pct_change().std()
+        max_daily_change = historical_volatility * 2
         
-        # Apply constraints progressively
-        for i in range(len(forecast)):
-            if i == 0:
-                # First forecast point
-                max_change = max_daily_change
-                forecast.loc[forecast.index[i], 'yhat'] = np.clip(
-                    forecast.loc[forecast.index[i], 'yhat'],
-                    current_price * (1 - max_change),
-                    current_price * (1 + max_change)
-                )
-            else:
-                # Subsequent points
-                prev_forecast = forecast.loc[forecast.index[i-1], 'yhat']
-                max_change = max_daily_change * np.sqrt(i + 1)  # Scale with time
-                forecast.loc[forecast.index[i], 'yhat'] = np.clip(
-                    forecast.loc[forecast.index[i], 'yhat'],
-                    prev_forecast * (1 - max_change),
-                    prev_forecast * (1 + max_change)
-                )
-        
-        # Adjust confidence intervals
-        forecast['yhat_lower'] = forecast['yhat'] * (1 - max_daily_change)
-        forecast['yhat_upper'] = forecast['yhat'] * (1 + max_daily_change)
+        # Apply constraints to forecast
+        forecast['yhat'] = forecast['yhat'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(
+            lower=current_price * (1 - max_daily_change),
+            upper=current_price * (1 + max_daily_change)
+        )
         
         # Add actual values
         forecast['actual'] = np.nan
@@ -123,21 +96,23 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         return forecast, None
     
     except Exception as e:
-        logger.error(f"Forecasting error: {str(e)}")
+        logger.error(f"Error in prophet_forecast: {str(e)}")
+        st.error(f"Forecasting error details: {str(e)}")
         return None, str(e)
 
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
-    """Create an interactive forecast plot"""
+    """Create an interactive plot with historical data and forecast"""
     try:
         fig = go.Figure()
 
-        # Get the dates for actual data
+        # Historical Data
         historical_dates = data.index if isinstance(data.index, pd.DatetimeIndex) else pd.to_datetime(data['Date'])
+        historical_values = data['Close']
 
-        # Add historical data trace
+        # Add historical price trace
         fig.add_trace(go.Scatter(
             x=historical_dates,
-            y=data['Close'],
+            y=historical_values,
             name='Historical',
             line=dict(color='blue'),
             hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br><b>Price</b>: $%{y:.2f}<extra></extra>'
@@ -194,6 +169,7 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
 
     except Exception as e:
         logger.error(f"Error creating plot: {str(e)}")
+        st.error(f"Error creating plot: {str(e)}")
         return None
 
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
