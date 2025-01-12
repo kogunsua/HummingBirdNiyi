@@ -327,3 +327,67 @@ class RealEstateIndicators:
         except Exception as e:
             logger.error(f"Error analyzing real estate indicator: {str(e)}")
             return {}
+
+def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
+    """Display key metrics and statistics"""
+    try:
+        # Enhanced logging for debugging
+        logger.info(f"Data shape: {data.shape}")
+        logger.info(f"Data columns: {data.columns.tolist()}")
+        logger.info(f"Forecast shape: {forecast.shape}")
+        logger.info(f"Forecast columns: {forecast.columns.tolist()}")
+
+        # Validate input data
+        if 'Close' not in data.columns:
+            raise ValueError("The 'data' DataFrame must contain a 'Close' column.")
+        if 'yhat' not in forecast.columns or 'yhat_upper' not in forecast.columns or 'yhat_lower' not in forecast.columns:
+            raise ValueError("The 'forecast' DataFrame must contain 'yhat', 'yhat_upper', and 'yhat_lower' columns.")
+        if data.empty:
+            raise ValueError("The 'data' DataFrame is empty.")
+        if forecast.empty:
+            raise ValueError("The 'forecast' DataFrame is empty.")
+
+        # Get the latest actual price
+        latest_price = float(data['Close'].iloc[-1])
+        previous_price = float(data['Close'].iloc[-2])
+
+        # Get the latest forecast price
+        forecast_price = float(forecast.loc[forecast.index[-1], 'yhat'])
+
+        # Calculate price change percentage
+        price_change = ((forecast_price - latest_price) / latest_price) * 100
+
+        # Calculate confidence range
+        confidence_range = float(forecast.loc[forecast.index[-1], 'yhat_upper'] - forecast.loc[forecast.index[-1], 'yhat_lower'])
+        confidence_percentage = (confidence_range / forecast_price) * 50
+
+        # Proper date formatting
+        forecast_date = pd.to_datetime(forecast['ds'].iloc[-1]).strftime('%Y-%m-%d')
+
+        # Create columns for metrics
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Current Price",
+                "${:.2f}".format(latest_price),
+                "{:+.2f}%".format(data['Close'].pct_change().iloc[-1] * 100)
+            )
+
+        with col2:
+            st.metric(
+                f"Forecast Price ({forecast_date})",
+                "${:.2f}".format(forecast_price),
+                "{:+.2f}%".format(price_change)
+            )
+
+        with col3:
+            st.metric(
+                "Forecast Range",
+                "${:.2f}".format(confidence_range),
+                "±{:.2f}%".format(confidence_percentage)
+            )
+
+    except Exception as e:
+        logger.error(f"Error displaying metrics: {str(e)}")
+        st.error(f"Error displaying metrics: {str(e)}")
