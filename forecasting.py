@@ -140,6 +140,10 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
 
         # Generate initial forecast
         forecast = model.predict(future)
+        
+        # Ensure forecast starts from the last actual date
+        last_actual_date = prophet_df['ds'].max()
+        forecast = forecast[forecast['ds'] >= last_actual_date].copy()
 
         # Daily movement constraints
         max_daily_move = min(0.05, historical_volatility * 2)  # Cap at 5% daily move
@@ -188,9 +192,11 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
     try:
         fig = go.Figure()
 
-        # Get historical dates and values with consistent date formatting
-        historical_dates = pd.to_datetime(data.index if isinstance(data.index, pd.DatetimeIndex) else data['Date'])
-        forecast_dates = pd.to_datetime(forecast['ds'])
+        # Get historical dates and values
+        if isinstance(data.index, pd.DatetimeIndex):
+            historical_dates = data.index
+        else:
+            historical_dates = pd.to_datetime(data['Date'] if 'Date' in data.columns else data['timestamp'])
         
         historical_values = data['Close'] if 'Close' in data.columns else data.iloc[:, 0]
 
@@ -200,21 +206,21 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             y=historical_values,
             name='Historical',
             line=dict(color='blue'),
-            hovertemplate="<b>Date</b>: %{x|%Y-%m-%d}<br><b>Price</b>: $%{y:,.2f}<extra></extra>"
+            hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
         ))
 
         # Add forecast trace
         fig.add_trace(go.Scatter(
-            x=forecast_dates,
+            x=forecast['ds'],
             y=forecast['yhat'],
             name=f'{model_name} Forecast',
             line=dict(color='red', dash='dot'),
-            hovertemplate="<b>Date</b>: %{x|%Y-%m-%d}<br><b>Forecast</b>: $%{y:,.2f}<extra></extra>"
+            hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
         ))
 
         # Add confidence interval
         fig.add_trace(go.Scatter(
-            x=pd.concat([forecast_dates, forecast_dates[::-1]]),
+            x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
             y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
             fill='toself',
             fillcolor='rgba(255,0,0,0.1)',
@@ -232,30 +238,24 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
                 'xanchor': 'center',
                 'yanchor': 'top'
             },
-            xaxis=dict(
-                dtick='M1',  # Monthly ticks
-                tickformat='%Y-%m-%d',
-                tickangle=45
-            ),
-            yaxis=dict(
-                tickprefix='$',
-                tickformat=',.2f'
-            ),
+            xaxis_title='Date',
+            yaxis_title='Price ($)',
             hovermode='x unified',
             showlegend=True,
             template='plotly_white',
-            plot_bgcolor='white',
-            margin=dict(l=50, r=50, t=50, b=50),
             legend=dict(
-                bgcolor='rgba(255, 255, 255, 0.8)',
-                bordercolor='lightgrey',
-                borderwidth=1
-            )
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            ),
+            margin=dict(l=50, r=50, t=50, b=50)
         )
 
-        # Add range slider
-        fig.update_xaxes(rangeslider_visible=True)
-        
+        # Update axes
+        fig.update_xaxes(gridcolor='LightGray', showgrid=True)
+        fig.update_yaxes(gridcolor='LightGray', showgrid=True)
+
         return fig
 
     except Exception as e:
