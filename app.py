@@ -1,4 +1,5 @@
 # app.py
+#dev
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
