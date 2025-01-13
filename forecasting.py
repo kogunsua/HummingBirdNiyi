@@ -1,4 +1,4 @@
-#forecasting.py
+# forecasting.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,108 +11,99 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str) -> pd.DataFrame:
+def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
     """Prepare data for Prophet model"""
     try:
         logger.info("Starting data preparation for Prophet")
         logger.info(f"Input data shape: {data.shape}")
+        logger.info(f"Input data columns: {data.columns.tolist()}")
         
         # Make a copy of the data
         df = data.copy()
         
-        # Convert index to datetime column
+        # If the dataframe has a DatetimeIndex, reset it to a column
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
             df.rename(columns={'index': 'ds'}, inplace=True)
-        else:
-            # Try to find date column
-            date_cols = [col for col in df.columns if col.lower() in ['date', 'timestamp']]
-            if date_cols:
-                df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
-            else:
-                df['ds'] = df.index
-
-        # Ensure Close price is used for 'y'
+        
+        # If 'Close' column exists, use it as 'y'
         if 'Close' in df.columns:
-            df['y'] = df['Close'].astype(float)
+            if 'ds' not in df.columns:  # If we haven't set 'ds' from the index
+                date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
+                if date_cols:
+                    df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
+                else:
+                    df['ds'] = df.index
+            
+            df['y'] = df['Close']
         else:
-            raise ValueError("No 'Close' price column found")
-
-        # Ensure datetime format for ds
+            # If no 'Close' column, use the first numeric column as 'y'
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                if 'ds' not in df.columns:
+                    df['ds'] = df.index
+                df['y'] = df[numeric_cols[0]]
+        
+        # Ensure 'ds' is datetime
         df['ds'] = pd.to_datetime(df['ds'])
-        if df['ds'].dt.tz is not None:
-            df['ds'] = df['ds'].dt.tz_localize(None)
-
-        # Sort by date and reset index
-        df = df.sort_values('ds')
-        df = df.reset_index(drop=True)
-
-        # Select only required columns
-        prophet_df = df[['ds', 'y']].copy()
-
-        # Validate data
+        
+        # Ensure 'y' is float
+        df['y'] = df['y'].astype(float)
+        
+        # Select only required columns and sort by date
+        prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
+        # Drop NaN values
+        prophet_df = prophet_df.dropna()
+        
+        logger.info(f"Prepared Prophet dataframe shape: {prophet_df.shape}")
+        logger.info(f"Prophet dataframe columns: {prophet_df.columns.tolist()}")
+        logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
+        
+        # Validate the prepared data
         if prophet_df.empty:
-            raise ValueError("Empty dataframe after preparation")
+            raise ValueError("Prepared dataframe is empty")
         if not np.isfinite(prophet_df['y']).all():
             raise ValueError("Data contains non-finite values")
         if prophet_df['ds'].isna().any():
-            raise ValueError("Missing dates in data")
-
-        logger.info(f"Prepared dataframe shape: {prophet_df.shape}")
-        logger.info(f"Date range: {prophet_df['ds'].min()} to {prophet_df['ds'].max()}")
-        
+            raise ValueError("Date column contains missing values")
+            
         return prophet_df
-
+    
     except Exception as e:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
-        raise e
+        raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
 
-def get_prophet_params(asset_type: str) -> dict:
-    """Get optimal Prophet parameters based on asset type"""
-    if asset_type == 'crypto':
-        return {
-            'changepoint_prior_scale': 0.05,    # More flexible for crypto volatility
-            'n_changepoints': 25,               # More changepoints for crypto
-            'seasonality_mode': 'multiplicative',
-            'daily_seasonality': True,          # Important for crypto's 24/7 trading
-            'weekly_seasonality': True,
-            'yearly_seasonality': True
-        }
-    else:  # stock parameters
-        return {
-            'changepoint_prior_scale': 0.001,   # More conservative for stocks
-            'n_changepoints': 10,
-            'seasonality_mode': 'multiplicative',
-            'daily_seasonality': False,         # Less important for stocks
-            'weekly_seasonality': True,
-            'yearly_seasonality': True
-        }
-
-def prophet_forecast(data: pd.DataFrame, periods: int, asset_type: str, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecast using Prophet model with realistic constraints"""
     try:
         logger.info(f"Starting forecast for {periods} periods")
-
+        
         # Prepare data for Prophet
-        prophet_df = prepare_data_for_prophet(data, asset_type)
-
+        prophet_df = prepare_data_for_prophet(data)
+        
         if prophet_df is None or prophet_df.empty:
             raise ValueError("No valid data for forecasting")
-
+        
         # Calculate historical volatility and trends
         current_price = prophet_df['y'].iloc[-1]
         historical_std = prophet_df['y'].std()
+        historical_mean = prophet_df['y'].mean()
         historical_daily_returns = prophet_df['y'].pct_change().dropna()
         max_historical_daily_return = historical_daily_returns.abs().quantile(0.95)  # 95th percentile
-        historical_volatility = historical_daily_returns.std()
-
+        
         logger.info(f"Current price: {current_price}")
         logger.info(f"Historical std: {historical_std}")
-        logger.info(f"Historical volatility: {historical_volatility}")
+        logger.info(f"Max historical daily return: {max_historical_daily_return}")
+        
+        # Calculate historical volatility
+        historical_volatility = historical_daily_returns.std()
 
-        # Initialize Prophet with asset-specific parameters
-        params = get_prophet_params(asset_type)
-        model = Prophet(**params)
+        # Initialize Prophet with stricter parameters
+        model = Prophet(
+            changepoint_prior_scale=0.0005,    # Even more conservative
+            n_changepoints=10,                 # Very limited changepoints
+            seasonality_mode='additive'        # More stable forecasts
+        )
 
         # Add monthly seasonality
         model.add_seasonality(
@@ -123,16 +114,16 @@ def prophet_forecast(data: pd.DataFrame, periods: int, asset_type: str, economic
 
         # Add economic indicator if available
         if economic_data is not None:
-            logger.info("Processing economic indicator data")
             economic_df = economic_data.copy()
-
+            
             if isinstance(economic_df.index, pd.DatetimeIndex):
                 economic_df = economic_df.reset_index()
-
-            economic_df.columns = ['ds', 'economic_indicator']
-            economic_df['ds'] = pd.to_datetime(economic_df['ds'])
-            economic_df['economic_indicator'] = economic_df['economic_indicator'].astype(float)
-
+            
+            economic_df = pd.DataFrame({
+                'ds': pd.to_datetime(economic_df['index'] if 'index' in economic_df.columns else economic_df.iloc[:, 0]),
+                'economic_indicator': economic_df['value' if 'value' in economic_df.columns else economic_df.columns[1]].astype(float)
+            })
+            
             prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
             prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
             model.add_regressor('economic_indicator', mode='multiplicative')
@@ -140,19 +131,20 @@ def prophet_forecast(data: pd.DataFrame, periods: int, asset_type: str, economic
         # Fit the model
         model.fit(prophet_df)
 
-        # Create future dataframe
+        # Generate future dates
         future = model.make_future_dataframe(periods=periods)
-
-        # Add economic indicator to future if available
+        
         if economic_data is not None:
             future = future.merge(economic_df, on='ds', how='left')
             future['economic_indicator'] = future['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
 
-        # Generate forecast
+        # Generate initial forecast
         forecast = model.predict(future)
 
-        # Apply constraints based on historical volatility
-        max_daily_move = min(0.05, historical_volatility * 2)  # Cap at 5%
+        # Daily movement constraints
+        max_daily_move = min(0.05, historical_volatility * 2)  # Cap at 5% daily move
+
+        # Progressive constraints
         last_known_price = current_price
         future_start_idx = len(prophet_df)
 
@@ -162,16 +154,28 @@ def prophet_forecast(data: pd.DataFrame, periods: int, asset_type: str, economic
             forecast.loc[i, 'yhat'] = np.clip(forecast.loc[i, 'yhat'], max_down_move, max_up_move)
             last_known_price = forecast.loc[i, 'yhat']
 
-            # Adjust confidence intervals
-            confidence_range = max_daily_move * last_known_price
-            forecast.loc[i, 'yhat_lower'] = forecast.loc[i, 'yhat'] - confidence_range
-            forecast.loc[i, 'yhat_upper'] = forecast.loc[i, 'yhat'] + confidence_range
+        # Apply dampening to future values
+        recent_trend = prophet_df['y'].iloc[-1] - prophet_df['y'].iloc[-2]
+        if abs(recent_trend) > 20:
+            trend_dampening = 0.8
+            for days_out in range(1, periods + 1):
+                dampening_factor = trend_dampening ** (days_out / 10)
+                forecast.loc[future_start_idx + days_out - 1, 'yhat'] = current_price + (forecast.loc[future_start_idx + days_out - 1, 'yhat'] - current_price) * dampening_factor
+
+        # Final validation
+        max_allowed_forecast = current_price * (1 + min(0.5, historical_volatility * np.sqrt(periods)))
+        min_allowed_forecast = current_price * (1 - min(0.5, historical_volatility * np.sqrt(periods)))
+        forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
 
         # Add actual values
         forecast['actual'] = np.nan
         forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
 
         logger.info("Forecast completed successfully")
+        logger.info(f"Final forecast range: {forecast['yhat'].min():.2f} to {forecast['yhat'].max():.2f}")
+        
         return forecast, None
 
     except Exception as e:
@@ -184,22 +188,30 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
     try:
         fig = go.Figure()
 
-        # Add historical price trace
+        # Get historical dates and values
+        if isinstance(data.index, pd.DatetimeIndex):
+            historical_dates = data.index
+        else:
+            historical_dates = pd.to_datetime(data['Date'] if 'Date' in data.columns else data['timestamp'])
+        
+        historical_values = data['Close'] if 'Close' in data.columns else data.iloc[:, 0]
+
+        # Add historical data trace
         fig.add_trace(go.Scatter(
-            x=data.index if isinstance(data.index, pd.DatetimeIndex) else pd.to_datetime(data['Date']),
-            y=data['Close'],
+            x=historical_dates,
+            y=historical_values,
             name='Historical',
-            line=dict(color='blue', width=2),
-            hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br><b>Price</b>: $%{y:.2f}<extra></extra>'
+            line=dict(color='blue'),
+            hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
         ))
 
         # Add forecast trace
         fig.add_trace(go.Scatter(
             x=forecast['ds'],
             y=forecast['yhat'],
-            name='Forecast',
-            line=dict(color='red', dash='dash', width=2),
-            hovertemplate='<b>Date</b>: %{x|%Y-%m-%d}<br><b>Forecast</b>: $%{y:.2f}<extra></extra>'
+            name=f'{model_name} Forecast',
+            line=dict(color='red', dash='dot'),
+            hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
         ))
 
         # Add confidence interval
@@ -210,7 +222,6 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             fillcolor='rgba(255,0,0,0.1)',
             line=dict(color='rgba(255,0,0,0)'),
             name='95% Confidence Interval',
-            showlegend=True,
             hoverinfo='skip'
         ))
 
@@ -218,24 +229,13 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         fig.update_layout(
             title={
                 'text': f'{symbol} Price Forecast',
-                'y': 0.95,
-                'x': 0.5,
+                'y':0.95,
+                'x':0.5,
                 'xanchor': 'center',
-                'yanchor': 'top',
+                'yanchor': 'top'
             },
-            xaxis=dict(
-                title='Date',
-                gridcolor='lightgrey',
-                showgrid=True,
-                zeroline=False
-            ),
-            yaxis=dict(
-                title='Price (USD)',
-                gridcolor='lightgrey',
-                showgrid=True,
-                zeroline=False,
-                tickprefix='$'
-            ),
+            xaxis_title='Date',
+            yaxis_title='Price ($)',
             hovermode='x unified',
             showlegend=True,
             template='plotly_white',
@@ -243,14 +243,14 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
                 yanchor="top",
                 y=0.99,
                 xanchor="left",
-                x=0.01,
-                bgcolor='rgba(255, 255, 255, 0.8)'
+                x=0.01
             ),
             margin=dict(l=50, r=50, t=50, b=50)
         )
 
-        # Add range slider
-        fig.update_xaxes(rangeslider_visible=True)
+        # Update axes
+        fig.update_xaxes(gridcolor='LightGray', showgrid=True)
+        fig.update_yaxes(gridcolor='LightGray', showgrid=True)
 
         return fig
 
@@ -262,24 +262,33 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
     """Display key metrics and statistics"""
     try:
-        # Get latest values
-        latest_price = float(data['Close'].iloc[-1])
-        daily_change = ((latest_price - float(data['Close'].iloc[-2])) / float(data['Close'].iloc[-2])) * 100
+        # Enhanced logging
+        logger.info(f"Data shape: {data.shape}")
+        logger.info(f"Forecast shape: {forecast.shape}")
         
+        # Get latest values ensuring proper column access
+        if isinstance(data, pd.DataFrame):
+            if 'Close' in data.columns:
+                latest_price = float(data['Close'].iloc[-1])
+                price_change = float(data['Close'].pct_change().iloc[-1] * 100)
+            else:
+                latest_price = float(data.iloc[-1, 0])
+                price_change = float((data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100)
+        else:
+            latest_price = float(data.iloc[-1])
+            price_change = float((data.iloc[-1] / data.iloc[-2] - 1) * 100)
+
         forecast_price = float(forecast['yhat'].iloc[-1])
         forecast_change = ((forecast_price - latest_price) / latest_price) * 100
-        
-        confidence_range = float(forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1])
-        confidence_percentage = (confidence_range / forecast_price) * 100 / 2
 
-        # Display metrics
+        # Create metrics display
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.metric(
                 "Current Price",
                 f"${latest_price:,.2f}",
-                f"{daily_change:+.2f}%"
+                f"{price_change:+.2f}%"
             )
 
         with col2:
@@ -290,14 +299,17 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
             )
 
         with col3:
+            confidence_range = float(forecast['yhat_upper'].iloc[-1]) - float(forecast['yhat_lower'].iloc[-1])
             st.metric(
                 "Forecast Range",
                 f"${confidence_range:,.2f}",
-                f"±{confidence_percentage:.2f}%"
+                f"\u00b1{(confidence_range/forecast_price*100/2):.2f}%"
             )
 
     except Exception as e:
-        logger.error(f"Error in display_metrics: {str(e)}")
+        logger.error(f"Error displaying metrics: {str(e)}")
+        logger.error(f"Data type: {type(data)}")
+        logger.error(f"Data columns: {data.columns if isinstance(data, pd.DataFrame) else 'Not a DataFrame'}")
         st.error(f"Error displaying metrics: {str(e)}")
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
