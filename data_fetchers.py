@@ -230,6 +230,29 @@ class EconomicIndicators:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
 
+class RealEstateIndicators:
+    def __init__(self):
+        self.indicators = Config.REAL_ESTATE_INDICATORS
+
+    def get_indicator_info(self, indicator: str) -> dict:
+        """Get metadata for a real estate indicator"""
+        return self.indicators.get(indicator, {})
+
+    def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
+        """Fetch dummy data for real estate indicators (Under Development)"""
+        try:
+            if indicator in self.indicators:
+                # Return a dummy dataframe with dates and random values
+                dates = pd.date_range(start=Config.START, end=Config.TODAY, freq='B')
+                data = np.random.randn(len(dates))
+                df = pd.DataFrame({'date': dates, 'value': data})
+                return df.set_index('date')
+            else:
+                raise ValueError(f"Indicator '{indicator}' not found")
+        except Exception as e:
+            logger.error(f"Error fetching real estate indicator data: {str(e)}")
+            return None
+
 class AssetDataFetcher:
     # Crypto symbol mappings with proper CoinGecko IDs
     CRYPTO_MAPPINGS = {
