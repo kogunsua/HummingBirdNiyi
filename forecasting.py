@@ -1,3 +1,4 @@
+#forecasting.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -113,10 +114,9 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             if isinstance(economic_df.index, pd.DatetimeIndex):
                 economic_df = economic_df.reset_index()
             
-            economic_df = pd.DataFrame({
-                'ds': pd.to_datetime(economic_df['index'] if 'index' in economic_df.columns else economic_df.iloc[:, 0]),
-                'economic_indicator': economic_df['value' if 'value' in economic_df.columns else economic_df.columns[1]].astype(float)
-            })
+            economic_df.columns = ['ds', 'economic_indicator']
+            economic_df['ds'] = pd.to_datetime(economic_df['ds'])
+            economic_df['economic_indicator'] = economic_df['economic_indicator'].astype(float)
             
             prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
             prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
