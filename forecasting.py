@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 from prophet import Prophet
 from typing import Tuple, Optional, Dict
 import logging
+from asset_config import AssetConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -73,8 +74,73 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
 
-def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None, 
-                    indicator: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add cryptocurrency-specific indicators"""
+    try:
+        # Market Volume Analysis
+        df['volume_ma'] = df['Volume'].rolling(window=24).mean()
+        df['volume_ratio'] = df['Volume'] / df['volume_ma']
+        
+        # Volatility Indicators
+        df['hourly_volatility'] = df['Close'].pct_change().rolling(window=24).std()
+        df['volatility_ratio'] = df['hourly_volatility'] / df['hourly_volatility'].rolling(window=168).mean()
+        
+        # Price Momentum
+        df['momentum_1h'] = df['Close'].pct_change(periods=1)
+        df['momentum_24h'] = df['Close'].pct_change(periods=24)
+        df['momentum_ratio'] = df['momentum_1h'] / df['momentum_24h']
+        
+        # Market Dominance (placeholder - replace with actual data)
+        df['market_dominance'] = 0.5
+        
+        # Network Metrics (placeholder - replace with actual data)
+        df['network_transactions'] = 0.5
+        df['active_addresses'] = 0.5
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error adding crypto indicators: {str(e)}")
+        return df
+
+def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
+    """Add technical indicators based on asset type"""
+    try:
+        # Get configuration
+        config = AssetConfig.get_config(asset_type)
+        indicators = config['indicators']
+        
+        # Add base technical indicators with configured parameters
+        df['MA5'] = df['Close'].rolling(window=indicators['ma_periods'][0]).mean()
+        df['MA20'] = df['Close'].rolling(window=indicators['ma_periods'][1]).mean()
+        df['MA50'] = df['Close'].rolling(window=indicators['ma_periods'][2]).mean()
+        
+        # RSI with configured period
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=indicators['rsi_period']).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=indicators['rsi_period']).mean()
+        rs = gain / loss
+        df['RSI'] = 100 - (100 / (1 + rs))
+        
+        # MACD with configured periods
+        macd_fast, macd_slow, signal = indicators['macd_periods']
+        exp1 = df['Close'].ewm(span=macd_fast, adjust=False).mean()
+        exp2 = df['Close'].ewm(span=macd_slow, adjust=False).mean()
+        df['MACD'] = exp1 - exp2
+        df['Signal_Line'] = df['MACD'].ewm(span=signal, adjust=False).mean()
+        
+        # Add crypto-specific indicators if needed
+        if asset_type.lower() == 'crypto':
+            df = add_crypto_specific_indicators(df)
+            
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error in add_technical_indicators: {str(e)}")
+        return df
+
+def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
+                     indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecast using Prophet model with economic and sentiment data"""
     try:
         logger.info(f"Starting forecast for {periods} periods")
@@ -85,18 +151,19 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         if prophet_df is None or prophet_df.empty:
             raise ValueError("No valid data for forecasting")
 
-        # Validate 'y' values for realistic ranges
-        if prophet_df['y'].max() > 1e6 or prophet_df['y'].min() < 0:
-            raise ValueError("Unrealistic 'y' values detected in the data")
+        # Get model configuration based on asset type
+        config = AssetConfig.get_config(asset_type)
+        model_config = config['model_config']
 
         # Initialize Prophet with parameters
         model = Prophet(
-            changepoint_prior_scale=0.001,
-            n_changepoints=10,
-            seasonality_mode='multiplicative',
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False
+            changepoint_prior_scale=model_config['changepoint_prior_scale'],
+            n_changepoints=model_config['n_changepoints'],
+            seasonality_mode=model_config['seasonality_mode'],
+            yearly_seasonality=model_config['yearly_seasonality'],
+            weekly_seasonality=model_config['weekly_seasonality'],
+            daily_seasonality=model_config['daily_seasonality'],
+            interval_width=model_config['interval_width']
         )
 
         # Add monthly seasonality
@@ -286,73 +353,80 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         st.error(f"Error creating plot: {str(e)}")
         return None
 
-def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display enhanced metrics with confidence analysis"""
+def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display cryptocurrency-specific metrics"""
     try:
-        # Get latest values
-        latest_price = float(data['Close'].iloc[-1]) if 'Close' in data.columns else float(data.iloc[-1, 0])
-        price_change = float(data['Close'].pct_change().iloc[-1] * 100) if 'Close' in data.columns else float((data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100)
-        
-        forecast_price = float(forecast['yhat'].iloc[-1])
-        forecast_change = ((forecast_price - latest_price) / latest_price) * 100
+        st.subheader("🪙 Cryptocurrency Metrics")
 
-        # Calculate confidence metrics
-        conf_width_95 = float(forecast['yhat_upper'].iloc[-1]) - float(forecast['yhat_lower'].iloc[-1])
-        conf_width_80 = conf_width_95 * 0.8
-        
-        conf_percent_95 = (conf_width_95 / forecast_price) * 100
-        conf_percent_80 = (conf_width_80 / forecast_price) * 100
-
-        # Display metrics in two rows
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
+        # Volume Analysis
+        vol_col1, vol_col2 = st.columns(2)
+        with vol_col1:
+            volume = float(data['Volume'].iloc[-1])
+            volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
             st.metric(
-                "Current Price",
-                f"${latest_price:,.2f}",
-                f"{price_change:+.2f}%"
+                "24h Volume",
+                f"${volume:,.0f}",
+                f"{volume_change:+.2f}%"
             )
 
-        with col2:
+        with vol_col2:
+            if 'volume_ratio' in data.columns:
+                vol_ratio = float(data['volume_ratio'].iloc[-1])
+                st.metric(
+                    "Volume Ratio",
+                    f"{vol_ratio:.2f}",
+                    "Above Average" if vol_ratio > 1 else "Below Average"
+                )
+
+        # Volatility Metrics
+        vol_metrics_col1, vol_metrics_col2 = st.columns(2)
+        with vol_metrics_col1:
+            if 'hourly_volatility' in data.columns:
+                hourly_vol = float(data['hourly_volatility'].iloc[-1] * 100)
+                st.metric(
+                    "Hourly Volatility",
+                    f"{hourly_vol:.2f}%"
+                )
+
+        with vol_metrics_col2:
+            if 'volatility_ratio' in data.columns:
+                vol_ratio = float(data['volatility_ratio'].iloc[-1])
+                st.metric(
+                    "Volatility Trend",
+                    "Increasing" if vol_ratio > 1 else "Decreasing"
+                )
+
+        # Market Metrics
+        if 'market_dominance' in data.columns:
             st.metric(
-                f"Forecast ({forecast['ds'].iloc[-1].strftime('%Y-%m-%d')})",
-                f"${forecast_price:,.2f}",
-                f"{forecast_change:+.2f}%"
+                "Market Dominance",
+                f"{float(data['market_dominance'].iloc[-1] * 100):.2f}%"
             )
 
-        with col3:
-            st.metric(
-                "Forecast Volatility",
-                f"{conf_percent_95:.1f}%",
-                f"±{conf_width_95/2:,.2f}"
-            )
+        # Network Metrics
+        if all(col in data.columns for col in ['network_transactions', 'active_addresses']):
+            net_col1, net_col2 = st.columns(2)
+            with net_col1:
+                st.metric("Network Transactions", f"{int(data['network_transactions'].iloc[-1]):,}")
+            with net_col2:
+                st.metric("Active Addresses", f"{int(data['active_addresses'].iloc[-1]):,}")
 
-        # Add confidence analysis
-        st.subheader("Confidence Level Analysis")
-        conf_col1, conf_col2 = st.columns(2)
+    except Exception as e:
+        logger.error(f"Error displaying crypto metrics: {str(e)}")
+        st.error(f"Error displaying crypto metrics: {str(e)}")
 
-        with conf_col1:
-            st.markdown("### 95% Confidence Interval")
-            st.write(f"Upper Bound: ${float(forecast['yhat_upper'].iloc[-1]):,.2f}")
-            st.write(f"Lower Bound: ${float(forecast['yhat_lower'].iloc[-1]):,.2f}")
-            st.write(f"Range Width: ${conf_width_95:,.2f}")
-            st.write(f"Relative Width: {conf_percent_95:.1f}%")
+def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
+    """Display enhanced metrics with confidence analysis based on asset type"""
+    try:
+        # Display common metrics first
+        display_common_metrics(data, forecast)
 
-        with conf_col2:
-            st.markdown("### 80% Confidence Interval")
-            st.write(f"Upper Bound: ${(forecast_price + conf_width_80/2):,.2f}")
-            st.write(f"Lower Bound: ${(forecast_price - conf_width_80/2):,.2f}")
-            st.write(f"Range Width: ${conf_width_80:,.2f}")
-            st.write(f"Relative Width: {conf_percent_80:.1f}%")
+        # Display asset-specific metrics
+        if asset_type.lower() == 'crypto':
+            display_crypto_metrics(data, forecast, symbol)
 
-        # Add interpretation
-        with st.expander("Understanding Confidence Intervals"):
-            st.markdown("""
-            - **95% Confidence Interval**: We are 95% confident that the actual price will fall within this range
-            - **80% Confidence Interval**: A narrower range with higher precision but lower confidence
-            - **Forecast Volatility**: Higher values indicate more uncertainty in the forecast
-            - **Relative Width**: Shows the size of the confidence interval as a percentage of the forecast price
-            """)
+        # Display confidence analysis
+        display_confidence_analysis(forecast)
 
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
@@ -386,20 +460,4 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
                 )
 
             with col2:
-                if analysis.get('change_1m') is not None:
-                    st.metric(
-                        "Monthly Change",
-                        f"{analysis['current_value']:.2f}",
-                        f"{analysis['change_1m']:.2f}% (1m)"
-                    )
-
-            with col3:
-                st.metric(
-                    "Average Value",
-                    f"{analysis['avg_value']:.2f}",
-                    f"σ: {analysis['std_dev']:.2f}"
-                )
-
-    except Exception as e:
-        logger.error(f"Error displaying economic indicators: {str(e)}")
-        st.error(f"Error displaying economic indicators: {str(e)}")
+                if analysis.get('change_1m') is
