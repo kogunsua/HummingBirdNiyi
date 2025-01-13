@@ -44,7 +44,7 @@ class DataSourceManager:
             headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
             url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}"
             response = requests.get(url, headers=headers)
-
+            
             if response.status_code == 200:
                 data = response.json()
                 if 'results' in data:
@@ -130,4 +130,4 @@ class EconomicIndicators:
         return {
             'GDP': {'series_id': 'GDP', 'description': 'Gross Domestic Product', 'frequency': 'Quarterly'},
             'UNRATE': {'series_id': 'UNRATE', 'description': 'Unemployment Rate', 'frequency': 'Monthly'},
-            'CPIAUCSL': {'series_id': 'CPIAUCSL', 'description': 'Consumer Price Index', 'frequency': 'Monthly'},
+            'CPIAUCSL': {'series_id
