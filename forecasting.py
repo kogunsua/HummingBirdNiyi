@@ -151,7 +151,7 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         recent_trend = prophet_df['y'].iloc[-1] - prophet_df['y'].iloc[-2]
         if abs(recent_trend) > 20:
             trend_dampening = 0.8
-            for days_out in range(1, periods + 1):
+            for days out in range(1, periods + 1):
                 dampening_factor = trend_dampening ** (days_out / 10)
                 forecast.loc[future_start_idx + days_out - 1, 'yhat'] = current_price + (forecast.loc[future_start_idx + days_out - 1, 'yhat'] - current_price) * dampening_factor
 
@@ -313,3 +313,24 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         logger.error(f"Data type: {type(data)}")
         logger.error(f"Data columns: {data.columns if isinstance(data, pd.DataFrame) else 'Not a DataFrame'}")
         st.error(f"Error displaying metrics: {str(e)}")
+
+
+def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: EconomicIndicators):
+    """Display economic indicators and their analysis"""
+    try:
+        stats = economic_indicators.analyze_indicator(data, indicator)
+        if stats:
+            st.subheader(f"Economic Indicator: {indicator}")
+            st.write(f"**Current Value:** {stats['current_value']}")
+            st.write(f"**1-day Change:** {stats['change_1d']:.2f}%")
+            if stats['change_1m'] is not None:
+                st.write(f"**1-month Change:** {stats['change_1m']:.2f}%")
+            st.write(f"**Min Value:** {stats['min_value']}")
+            st.write(f"**Max Value:** {stats['max_value']}")
+            st.write(f"**Average Value:** {stats['avg_value']}")
+            st.write(f"**Standard Deviation:** {stats['std_dev']:.2f}")
+        else:
+            st.warning(f"No stats available for {indicator}")
+    except Exception as e:
+        logger.error(f"Error displaying economic indicators: {str(e)}")
+        st.error(f"Error displaying economic indicators: {str(e)}")
