@@ -73,8 +73,9 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
 
-def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Generate forecast using Prophet model with realistic constraints"""
+def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None, 
+                    indicator: Optional[str] = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    """Generate forecast using Prophet model with economic and sentiment data"""
     try:
         logger.info(f"Starting forecast for {periods} periods")
         
@@ -84,25 +85,14 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         if prophet_df is None or prophet_df.empty:
             raise ValueError("No valid data for forecasting")
         
-        # Calculate historical volatility and trends
-        current_price = prophet_df['y'].iloc[-1]
-        historical_std = prophet_df['y'].std()
-        historical_mean = prophet_df['y'].mean()
-        historical_daily_returns = prophet_df['y'].pct_change().dropna()
-        max_historical_daily_return = historical_daily_returns.abs().quantile(0.95)  # 95th percentile
-        
-        logger.info(f"Current price: {current_price}")
-        logger.info(f"Historical std: {historical_std}")
-        logger.info(f"Max historical daily return: {max_historical_daily_return}")
-        
-        # Calculate historical volatility
-        historical_volatility = historical_daily_returns.std()
-
-        # Initialize Prophet with stricter parameters
+        # Initialize Prophet with parameters
         model = Prophet(
-            changepoint_prior_scale=0.0005,    # Even more conservative
-            n_changepoints=10,                 # Very limited changepoints
-            seasonality_mode='additive'        # More stable forecasts
+            changepoint_prior_scale=0.001,
+            n_changepoints=10,
+            seasonality_mode='multiplicative',
+            yearly_seasonality=True,
+            weekly_seasonality=True,
+            daily_seasonality=False
         )
 
         # Add monthly seasonality
@@ -114,73 +104,61 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
 
         # Add economic indicator if available
         if economic_data is not None:
-            economic_df = economic_data.copy()
-            
-            if isinstance(economic_df.index, pd.DatetimeIndex):
-                economic_df = economic_df.reset_index()
-            
-            economic_df = pd.DataFrame({
-                'ds': pd.to_datetime(economic_df['index'] if 'index' in economic_df.columns else economic_df.iloc[:, 0]),
-                'economic_indicator': economic_df['value' if 'value' in economic_df.columns else economic_df.columns[1]].astype(float)
-            })
-            
-            prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
-            prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
-            model.add_regressor('economic_indicator', mode='multiplicative')
+            logger.info("Processing economic indicator data")
+            if indicator == 'POLSENT':
+                # Special handling for sentiment data
+                economic_df = economic_data.copy()
+                economic_df.columns = ['ds', 'sentiment']
+                prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
+                
+                # Fill missing values with rolling mean
+                prophet_df['sentiment'] = prophet_df['sentiment'].fillna(
+                    prophet_df['sentiment'].rolling(window=7, min_periods=1).mean()
+                )
+                
+                # Add sentiment as a regressor
+                model.add_regressor('sentiment', mode='multiplicative')
+            else:
+                # Handle other indicators as before
+                economic_df = economic_data.copy()
+                economic_df.columns = ['ds', 'economic_indicator']
+                prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
+                prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(
+                    method='ffill'
+                ).fillna(method='bfill')
+                model.add_regressor('economic_indicator', mode='multiplicative')
 
         # Fit the model
         model.fit(prophet_df)
 
-        # Generate future dates
+        # Create future dataframe
         future = model.make_future_dataframe(periods=periods)
         
+        # Add economic indicator to future if available
         if economic_data is not None:
-            future = future.merge(economic_df, on='ds', how='left')
-            future['economic_indicator'] = future['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
+            if indicator == 'POLSENT':
+                future = future.merge(economic_df[['ds', 'sentiment']], on='ds', how='left')
+                future['sentiment'] = future['sentiment'].fillna(
+                    prophet_df['sentiment'].mean()
+                )
+            else:
+                future = future.merge(economic_df, on='ds', how='left')
+                future['economic_indicator'] = future['economic_indicator'].fillna(
+                    method='ffill'
+                ).fillna(method='bfill')
 
-        # Generate initial forecast
+        # Generate forecast
         forecast = model.predict(future)
-
-        # Daily movement constraints
-        max_daily_move = min(0.05, historical_volatility * 2)  # Cap at 5% daily move
-
-        # Progressive constraints
-        last_known_price = current_price
-        future_start_idx = len(prophet_df)
-
-        for i in range(future_start_idx, len(forecast)):
-            max_up_move = last_known_price * (1 + max_daily_move)
-            max_down_move = last_known_price * (1 - max_daily_move)
-            forecast.loc[i, 'yhat'] = np.clip(forecast.loc[i, 'yhat'], max_down_move, max_up_move)
-            last_known_price = forecast.loc[i, 'yhat']
-
-        # Apply dampening to future values
-        recent_trend = prophet_df['y'].iloc[-1] - prophet_df['y'].iloc[-2]
-        if abs(recent_trend) > 20:
-            trend_dampening = 0.8
-            for days_out in range(1, periods + 1):
-                dampening_factor = trend_dampening ** (days_out / 10)
-                forecast.loc[future_start_idx + days_out - 1, 'yhat'] = current_price + (forecast.loc[future_start_idx + days_out - 1, 'yhat'] - current_price) * dampening_factor
-
-        # Final validation
-        max_allowed_forecast = current_price * (1 + min(0.5, historical_volatility * np.sqrt(periods)))
-        min_allowed_forecast = current_price * (1 - min(0.5, historical_volatility * np.sqrt(periods)))
-        forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
-        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
-        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
 
         # Add actual values
         forecast['actual'] = np.nan
         forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
 
         logger.info("Forecast completed successfully")
-        logger.info(f"Final forecast range: {forecast['yhat'].min():.2f} to {forecast['yhat'].max():.2f}")
-        
         return forecast, None
 
     except Exception as e:
         logger.error(f"Error in prophet_forecast: {str(e)}")
-        st.error(f"Forecasting error details: {str(e)}")
         return None, str(e)
 
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
