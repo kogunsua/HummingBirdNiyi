@@ -35,3 +35,4 @@ python-dateutil
 quandl
 census
 python-dotenv
+gdelt
