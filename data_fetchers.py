@@ -44,7 +44,7 @@ class DataSourceManager:
             headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
             url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}"
             response = requests.get(url, headers=headers)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if 'results' in data:
@@ -65,18 +65,6 @@ class EconomicIndicators:
     def _initialize_indicators(self):
         """Initialize FRED indicators with descriptions and frequencies"""
         self.indicator_details = {
-            'GDP': {
-                'series_id': 'GDP',
-                'description': 'Gross Domestic Product',
-                'frequency': 'Quarterly',
-                'units': 'Billions of Dollars'
-            },
-            'UNRATE': {
-                'series_id': 'UNRATE',
-                'description': 'Unemployment Rate',
-                'frequency': 'Monthly',
-                'units': 'Percent'
-            },
             'CPIAUCSL': {
                 'series_id': 'CPIAUCSL',
                 'description': 'Consumer Price Index',
@@ -89,13 +77,32 @@ class EconomicIndicators:
                 'frequency': 'Daily',
                 'units': 'Percent'
             },
+            'GDP': {
+                'series_id': 'GDP',
+                'description': 'Gross Domestic Product',
+                'frequency': 'Quarterly',
+                'units': 'Billions of Dollars'
+            },
             'IEF': {
                 'series_id': 'IEF',
                 'description': 'iShares 7-10 Year Treasury Bond ETF',
                 'frequency': 'Daily',
                 'units': 'USD'
+            },
+            'Political Sentiment': {
+                'series_id': 'PSENT',
+                'description': 'Political Sentiment Index',
+                'frequency': 'Monthly',
+                'units': 'Index'
+            },
+            'UNRATE': {
+                'series_id': 'UNRATE',
+                'description': 'Unemployment Rate',
+                'frequency': 'Monthly',
+                'units': 'Percent'
             }
         }
+        self.indicator_details = dict(sorted(self.indicator_details.items()))
 
     def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching indicator data"""
@@ -113,13 +120,13 @@ class EconomicIndicators:
                 indicator_details = EconomicIndicators._get_indicator_details()
                 indicator_info = indicator_details[indicator]
                 df = EconomicIndicators._get_fred_data(fred, indicator_info)
-            
+
             if df is not None:
                 df['index'] = pd.to_datetime(df['index']).dt.tz_localize(None)
                 return df
-            
+
             raise ValueError(f"No data available for {indicator}")
-            
+
         except Exception as e:
             st.error(f"Error fetching {indicator} data: {str(e)}")
             return None
@@ -128,11 +135,12 @@ class EconomicIndicators:
     def _get_indicator_details():
         """Get indicator details dictionary"""
         return {
-            'GDP': {'series_id': 'GDP', 'description': 'Gross Domestic Product', 'frequency': 'Quarterly'},
-            'UNRATE': {'series_id': 'UNRATE', 'description': 'Unemployment Rate', 'frequency': 'Monthly'},
             'CPIAUCSL': {'series_id': 'CPIAUCSL', 'description': 'Consumer Price Index', 'frequency': 'Monthly'},
             'DFF': {'series_id': 'DFF', 'description': 'Federal Funds Rate', 'frequency': 'Daily'},
-            'IEF': {'series_id': 'IEF', 'description': 'iShares 7-10 Year Treasury Bond ETF', 'frequency': 'Daily'}
+            'GDP': {'series_id': 'GDP', 'description': 'Gross Domestic Product', 'frequency': 'Quarterly'},
+            'IEF': {'series_id': 'IEF', 'description': 'iShares 7-10 Year Treasury Bond ETF', 'frequency': 'Daily'},
+            'Political Sentiment': {'series_id': 'PSENT', 'description': 'Political Sentiment Index', 'frequency': 'Monthly'},
+            'UNRATE': {'series_id': 'UNRATE', 'description': 'Unemployment Rate', 'frequency': 'Monthly'}
         }
 
     @staticmethod
@@ -164,13 +172,13 @@ class EconomicIndicators:
             observation_end=Config.TODAY,
             frequency='d'
         )
-        
+
         df = pd.DataFrame(data).reset_index()
         df.columns = ['index', 'value']
-        
+
         if indicator_info['frequency'] != 'Daily':
             df['value'] = df['value'].ffill()
-            
+
         return df
 
     def get_indicator_info(self, indicator: str) -> dict:
@@ -181,7 +189,7 @@ class EconomicIndicators:
         """Analyze an economic indicator and return key statistics"""
         if df is None or df.empty:
             return {}
-            
+
         try:
             stats = {
                 'current_value': df['value'].iloc[-1],
@@ -249,7 +257,7 @@ class AssetDataFetcher:
             logger.info(f"Attempting to fetch {symbol} from CoinGecko...")
             cg = CoinGeckoAPI()
             data = cg.get_coin_market_chart_by_id(id=mappings['coingecko'], vs_currency='usd', days=365, interval='daily')
-            
+
             if data and 'prices' in data:
                 logger.info(f"Successfully fetched {symbol} from CoinGecko")
                 prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
@@ -267,7 +275,7 @@ class AssetDataFetcher:
         except Exception as e:
             error_messages.append(f"CoinGecko: {str(e)}")
             logger.warning(f"CoinGecko fetch failed for {symbol}: {str(e)}")
-        
+
         # Fallback to Polygon.io
         try:
             logger.info(f"Attempting to fetch {symbol} from Polygon.io...")
@@ -279,7 +287,7 @@ class AssetDataFetcher:
         except Exception as e:
             error_messages.append(f"Polygon.io: {str(e)}")
             logger.warning(f"Polygon.io fetch failed for {symbol}: {str(e)}")
-        
+
         # Final fallback to Yahoo Finance
         try:
             logger.info(f"Attempting to fetch {symbol} from Yahoo Finance...")
@@ -291,7 +299,7 @@ class AssetDataFetcher:
         except Exception as e:
             error_messages.append(f"Yahoo Finance: {str(e)}")
             logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(e)}")
-        
+
         error_msg = f"Failed to fetch {symbol} data from all sources:\n" + "\n".join(error_messages)
         st.error(error_msg)
         return None
@@ -300,7 +308,7 @@ class RealEstateIndicators:
     """Class for handling real estate market indicators"""
     def __init__(self):
         self.indicator_details = Config.REAL_ESTATE_INDICATORS
-    
+
     def get_indicator_info(self, indicator: str) -> dict:
         """Get metadata for a real estate indicator"""
         return self.indicator_details.get(indicator, {})
@@ -319,7 +327,7 @@ class RealEstateIndicators:
         """Analyze a real estate indicator and return key statistics"""
         if df is None or df.empty:
             return {}
-        
+
         try:
             # Currently returns empty dict as this is a placeholder
             # To be implemented with actual analysis logic
