@@ -41,7 +41,7 @@ yfinance
 pandas
 requests
 prophet
-plotly>
+plotly
 fredapi
 numpy
 typing
