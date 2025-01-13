@@ -75,7 +75,7 @@ def main():
         st.sidebar.header("📈 Economic Indicators")
         selected_indicator = st.sidebar.selectbox(
             "Select Economic Indicator",
-            ['None'] + list(Config.INDICATORS.keys()),
+            ['None'] + sorted(list(Config.INDICATORS.keys())),
             format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
         
