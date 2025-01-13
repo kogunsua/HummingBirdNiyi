@@ -151,7 +151,7 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         recent_trend = prophet_df['y'].iloc[-1] - prophet_df['y'].iloc[-2]
         if abs(recent_trend) > 20:
             trend_dampening = 0.8
-            for days out in range(1, periods + 1):
+            for days_out in range(1, periods + 1):
                 dampening_factor = trend_dampening ** (days_out / 10)
                 forecast.loc[future_start_idx + days_out - 1, 'yhat'] = current_price + (forecast.loc[future_start_idx + days_out - 1, 'yhat'] - current_price) * dampening_factor
 
@@ -160,7 +160,7 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         min_allowed_forecast = current_price * (1 - min(0.5, historical_volatility * np.sqrt(periods)))
         forecast['yhat'] = forecast['yhat'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
         forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
-        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_forecast, upper=max_allowed_forecast)
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=min_allowed_forecast, upper max_allowed_forecast)
 
         # Add actual values
         forecast['actual'] = np.nan
