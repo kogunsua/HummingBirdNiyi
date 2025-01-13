@@ -30,11 +30,12 @@ class Config:
     
     # Economic Indicators
     INDICATORS = {
-        'GDP': 'Gross Domestic Product',
-        'UNRATE': 'Unemployment Rate',
         'CPIAUCSL': 'Consumer Price Index',
         'DFF': 'Federal Funds Rate',
-        'IEF': 'iShares 7-10 Year Treasury Bond ETF'
+        'GDP': 'Gross Domestic Product',
+        'IEF': 'iShares 7-10 Year Treasury Bond ETF',
+        'POLSENT': 'Political Sentiment',
+        'UNRATE': 'Unemployment Rate'
     }
     
     # Real Estate Indicators
