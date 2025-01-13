@@ -16,15 +16,15 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         logger.info("Starting data preparation for Prophet")
         logger.info(f"Input data shape: {data.shape}")
         logger.info(f"Input data columns: {data.columns.tolist()}")
-        
+
         # Make a copy of the data
         df = data.copy()
-        
-        # If the dataframe has a DatetimeIndex, reset it to a column
+
+        # If the DataFrame has a DatetimeIndex, reset it to a column
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
             df.rename(columns={'index': 'ds'}, inplace=True)
-        
+
         # If 'Close' column exists, use it as 'y'
         if 'Close' in df.columns:
             if 'ds' not in df.columns:  # If we haven't set 'ds' from the index
@@ -33,7 +33,7 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
                     df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
                 else:
                     df['ds'] = df.index
-            
+
             df['y'] = df['Close']
         else:
             # If no 'Close' column, use the first numeric column as 'y'
@@ -42,32 +42,32 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
                 if 'ds' not in df.columns:
                     df['ds'] = df.index
                 df['y'] = df[numeric_cols[0]]
-        
+
         # Ensure 'ds' is datetime
         df['ds'] = pd.to_datetime(df['ds'])
-        
+
         # Ensure 'y' is float
         df['y'] = df['y'].astype(float)
-        
+
         # Select only required columns and sort by date
         prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
         # Drop NaN values
         prophet_df = prophet_df.dropna()
-        
-        logger.info(f"Prepared Prophet dataframe shape: {prophet_df.shape}")
-        logger.info(f"Prophet dataframe columns: {prophet_df.columns.tolist()}")
+
+        logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
+        logger.info(f"Prophet DataFrame columns: {prophet_df.columns.tolist()}")
         logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
-        
+
         # Validate the prepared data
         if prophet_df.empty:
-            raise ValueError("Prepared dataframe is empty")
+            raise ValueError("Prepared DataFrame is empty")
         if not np.isfinite(prophet_df['y']).all():
             raise ValueError("Data contains non-finite values")
         if prophet_df['ds'].isna().any():
             raise ValueError("Date column contains missing values")
-            
+
         return prophet_df
-    
+
     except Exception as e:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
@@ -77,13 +77,17 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
     """Generate forecast using Prophet model with economic and sentiment data"""
     try:
         logger.info(f"Starting forecast for {periods} periods")
-        
+
         # Prepare data for Prophet
         prophet_df = prepare_data_for_prophet(data)
-        
+
         if prophet_df is None or prophet_df.empty:
             raise ValueError("No valid data for forecasting")
-        
+
+        # Validate 'y' values for realistic ranges
+        if prophet_df['y'].max() > 1e6 or prophet_df['y'].min() < 0:
+            raise ValueError("Unrealistic 'y' values detected in the data")
+
         # Initialize Prophet with parameters
         model = Prophet(
             changepoint_prior_scale=0.001,
@@ -109,12 +113,12 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
                 economic_df = economic_data.copy()
                 economic_df.columns = ['ds', 'sentiment']
                 prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
-                
+
                 # Fill missing values with rolling mean
                 prophet_df['sentiment'] = prophet_df['sentiment'].fillna(
                     prophet_df['sentiment'].rolling(window=7, min_periods=1).mean()
                 )
-                
+
                 # Add sentiment as a regressor
                 model.add_regressor('sentiment', mode='multiplicative')
             else:
@@ -130,9 +134,9 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         # Fit the model
         model.fit(prophet_df)
 
-        # Create future dataframe
+        # Create future DataFrame
         future = model.make_future_dataframe(periods=periods)
-        
+
         # Add economic indicator to future if available
         if economic_data is not None:
             if indicator == 'POLSENT':
@@ -170,7 +174,7 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             historical_dates = data.index
         else:
             historical_dates = pd.to_datetime(data['Date'] if 'Date' in data.columns else data['timestamp'])
-        
+
         historical_values = data['Close'] if 'Close' in data.columns else data.iloc[:, 0]
 
         # Add historical data trace
@@ -242,7 +246,7 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         # Enhanced logging
         logger.info(f"Data shape: {data.shape}")
         logger.info(f"Forecast shape: {forecast.shape}")
-        
+
         # Get latest values ensuring proper column access
         if isinstance(data, pd.DataFrame):
             if 'Close' in data.columns:
@@ -293,29 +297,29 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     """Display economic indicator information and analysis"""
     try:
         st.subheader("📊 Economic Indicator Analysis")
-        
+
         # Get indicator details
         indicator_info = economic_indicators.get_indicator_info(indicator)
-        
+
         # Display indicator information
         st.markdown(f"""
             **Indicator:** {indicator_info.get('description', indicator)}  
             **Frequency:** {indicator_info.get('frequency', 'N/A')}  
             **Units:** {indicator_info.get('units', 'N/A')}
         """)
-        
+
         # Get and display analysis
         analysis = economic_indicators.analyze_indicator(data, indicator)
         if analysis:
             col1, col2, col3 = st.columns(3)
-            
+
             with col1:
                 st.metric(
                     "Current Value",
                     f"{analysis['current_value']:.2f}",
                     f"{analysis['change_1d']:.2f}% (1d)"
                 )
-            
+
             with col2:
                 if analysis.get('change_1m') is not None:
                     st.metric(
@@ -323,7 +327,7 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
                         f"{analysis['current_value']:.2f}",
                         f"{analysis['change_1m']:.2f}% (1m)"
                     )
-            
+
             with col3:
                 st.metric(
                     "Average Value",
