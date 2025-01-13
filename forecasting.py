@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from prophet import Prophet
 from typing import Tuple, Optional, Dict
 import logging
@@ -165,61 +166,106 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         return None, str(e)
 
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
-    """Create an interactive plot with historical data and forecast"""
+    """Create an interactive plot with historical data and forecast with multiple confidence intervals"""
     try:
-        fig = go.Figure()
+        # Create figure with secondary y-axis for volume
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
+                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
 
-        # Get historical dates and values
+        # Historical Data
         if isinstance(data.index, pd.DatetimeIndex):
             historical_dates = data.index
         else:
             historical_dates = pd.to_datetime(data['Date'] if 'Date' in data.columns else data['timestamp'])
-
         historical_values = data['Close'] if 'Close' in data.columns else data.iloc[:, 0]
 
-        # Add historical data trace
-        fig.add_trace(go.Scatter(
-            x=historical_dates,
-            y=historical_values,
-            name='Historical',
-            line=dict(color='blue'),
-            hovertemplate='Date: %{x}<br>Price: $%{y:.2f}<extra></extra>'
-        ))
+        # Add historical data
+        fig.add_trace(
+            go.Candlestick(
+                x=historical_dates,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=historical_values,
+                name='Historical',
+                increasing_line_color='green',
+                decreasing_line_color='red'
+            ),
+            row=1, col=1
+        )
 
-        # Add forecast trace
-        fig.add_trace(go.Scatter(
-            x=forecast['ds'],
-            y=forecast['yhat'],
-            name=f'{model_name} Forecast',
-            line=dict(color='red', dash='dot'),
-            hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-        ))
+        # Add forecast line
+        fig.add_trace(
+            go.Scatter(
+                x=forecast['ds'],
+                y=forecast['yhat'],
+                name=f'{model_name} Forecast',
+                line=dict(color='blue', dash='dash'),
+                hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
+            ),
+            row=1, col=1
+        )
 
-        # Add confidence interval
-        fig.add_trace(go.Scatter(
-            x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
-            y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
-            fill='toself',
-            fillcolor='rgba(255,0,0,0.1)',
-            line=dict(color='rgba(255,0,0,0)'),
-            name='95% Confidence Interval',
-            hoverinfo='skip'
-        ))
+        # Add 95% confidence interval
+        fig.add_trace(
+            go.Scatter(
+                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
+                y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
+                fill='toself',
+                fillcolor='rgba(0,100,255,0.1)',
+                line=dict(color='rgba(0,0,0,0)'),
+                name='95% Confidence',
+                hoverinfo='skip'
+            ),
+            row=1, col=1
+        )
+
+        # Add 80% confidence interval
+        upper_80 = forecast['yhat'] + (forecast['yhat_upper'] - forecast['yhat']) * 0.8
+        lower_80 = forecast['yhat'] - (forecast['yhat'] - forecast['yhat_lower']) * 0.8
+        
+        fig.add_trace(
+            go.Scatter(
+                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
+                y=pd.concat([upper_80, lower_80[::-1]]),
+                fill='toself',
+                fillcolor='rgba(0,100,255,0.2)',
+                line=dict(color='rgba(0,0,0,0)'),
+                name='80% Confidence',
+                hoverinfo='skip'
+            ),
+            row=1, col=1
+        )
+
+        # Add confidence width analysis
+        confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
+        fig.add_trace(
+            go.Scatter(
+                x=forecast['ds'],
+                y=confidence_width,
+                name='Confidence Width %',
+                line=dict(color='purple'),
+                hovertemplate='Date: %{x}<br>Width: %{y:.1f}%<extra></extra>'
+            ),
+            row=2, col=1
+        )
 
         # Update layout
         fig.update_layout(
             title={
-                'text': f'{symbol} Price Forecast',
+                'text': f'{symbol} Price Forecast with Confidence Analysis',
                 'y':0.95,
                 'x':0.5,
                 'xanchor': 'center',
                 'yanchor': 'top'
             },
-            xaxis_title='Date',
             yaxis_title='Price ($)',
+            yaxis2_title='Confidence Width (%)',
             hovermode='x unified',
             showlegend=True,
             template='plotly_white',
+            height=800,
             legend=dict(
                 yanchor="top",
                 y=0.99,
@@ -241,28 +287,23 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         return None
 
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display key metrics and statistics"""
+    """Display enhanced metrics with confidence analysis"""
     try:
-        # Enhanced logging
-        logger.info(f"Data shape: {data.shape}")
-        logger.info(f"Forecast shape: {forecast.shape}")
-
-        # Get latest values ensuring proper column access
-        if isinstance(data, pd.DataFrame):
-            if 'Close' in data.columns:
-                latest_price = float(data['Close'].iloc[-1])
-                price_change = float(data['Close'].pct_change().iloc[-1] * 100)
-            else:
-                latest_price = float(data.iloc[-1, 0])
-                price_change = float((data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100)
-        else:
-            latest_price = float(data.iloc[-1])
-            price_change = float((data.iloc[-1] / data.iloc[-2] - 1) * 100)
-
+        # Get latest values
+        latest_price = float(data['Close'].iloc[-1]) if 'Close' in data.columns else float(data.iloc[-1, 0])
+        price_change = float(data['Close'].pct_change().iloc[-1] * 100) if 'Close' in data.columns else float((data.iloc[-1, 0] / data.iloc[-2, 0] - 1) * 100)
+        
         forecast_price = float(forecast['yhat'].iloc[-1])
         forecast_change = ((forecast_price - latest_price) / latest_price) * 100
 
-        # Create metrics display
+        # Calculate confidence metrics
+        conf_width_95 = float(forecast['yhat_upper'].iloc[-1]) - float(forecast['yhat_lower'].iloc[-1])
+        conf_width_80 = conf_width_95 * 0.8
+        
+        conf_percent_95 = (conf_width_95 / forecast_price) * 100
+        conf_percent_80 = (conf_width_80 / forecast_price) * 100
+
+        # Display metrics in two rows
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -274,23 +315,47 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
 
         with col2:
             st.metric(
-                f"Forecast Price ({forecast['ds'].iloc[-1].strftime('%Y-%m-%d')})",
+                f"Forecast ({forecast['ds'].iloc[-1].strftime('%Y-%m-%d')})",
                 f"${forecast_price:,.2f}",
                 f"{forecast_change:+.2f}%"
             )
 
         with col3:
-            confidence_range = float(forecast['yhat_upper'].iloc[-1]) - float(forecast['yhat_lower'].iloc[-1])
             st.metric(
-                "Forecast Range",
-                f"${confidence_range:,.2f}",
-                f"\u00b1{(confidence_range/forecast_price*100/2):.2f}%"
+                "Forecast Volatility",
+                f"{conf_percent_95:.1f}%",
+                f"±{conf_width_95/2:,.2f}"
             )
+
+        # Add confidence analysis
+        st.subheader("Confidence Level Analysis")
+        conf_col1, conf_col2 = st.columns(2)
+
+        with conf_col1:
+            st.markdown("### 95% Confidence Interval")
+            st.write(f"Upper Bound: ${float(forecast['yhat_upper'].iloc[-1]):,.2f}")
+            st.write(f"Lower Bound: ${float(forecast['yhat_lower'].iloc[-1]):,.2f}")
+            st.write(f"Range Width: ${conf_width_95:,.2f}")
+            st.write(f"Relative Width: {conf_percent_95:.1f}%")
+
+        with conf_col2:
+            st.markdown("### 80% Confidence Interval")
+            st.write(f"Upper Bound: ${(forecast_price + conf_width_80/2):,.2f}")
+            st.write(f"Lower Bound: ${(forecast_price - conf_width_80/2):,.2f}")
+            st.write(f"Range Width: ${conf_width_80:,.2f}")
+            st.write(f"Relative Width: {conf_percent_80:.1f}%")
+
+        # Add interpretation
+        with st.expander("Understanding Confidence Intervals"):
+            st.markdown("""
+            - **95% Confidence Interval**: We are 95% confident that the actual price will fall within this range
+            - **80% Confidence Interval**: A narrower range with higher precision but lower confidence
+            - **Forecast Volatility**: Higher values indicate more uncertainty in the forecast
+            - **Relative Width**: Shows the size of the confidence interval as a percentage of the forecast price
+            """)
 
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
-        logger.error(f"Data type: {type(data)}")
-        logger.error(f"Data columns: {data.columns if isinstance(data, pd.DataFrame) else 'Not a DataFrame'}")
         st.error(f"Error displaying metrics: {str(e)}")
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
