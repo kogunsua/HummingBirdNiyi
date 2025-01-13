@@ -16,10 +16,10 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str) -> pd.DataFram
     try:
         logger.info("Starting data preparation for Prophet")
         logger.info(f"Input data shape: {data.shape}")
-
+        
         # Make a copy of the data
         df = data.copy()
-
+        
         # Convert index to datetime column
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
@@ -60,7 +60,7 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str) -> pd.DataFram
 
         logger.info(f"Prepared dataframe shape: {prophet_df.shape}")
         logger.info(f"Date range: {prophet_df['ds'].min()} to {prophet_df['ds'].max()}")
-
+        
         return prophet_df
 
     except Exception as e:
@@ -71,19 +71,19 @@ def get_prophet_params(asset_type: str) -> dict:
     """Get optimal Prophet parameters based on asset type"""
     if asset_type == 'crypto':
         return {
-            'changepoint_prior_scale': 0.05,
-            'n_changepoints': 25,
+            'changepoint_prior_scale': 0.05,    # More flexible for crypto volatility
+            'n_changepoints': 25,               # More changepoints for crypto
             'seasonality_mode': 'multiplicative',
-            'daily_seasonality': True,
+            'daily_seasonality': True,          # Important for crypto's 24/7 trading
             'weekly_seasonality': True,
             'yearly_seasonality': True
         }
     else:  # stock parameters
         return {
-            'changepoint_prior_scale': 0.001,
+            'changepoint_prior_scale': 0.001,   # More conservative for stocks
             'n_changepoints': 10,
             'seasonality_mode': 'multiplicative',
-            'daily_seasonality': False,
+            'daily_seasonality': False,         # Less important for stocks
             'weekly_seasonality': True,
             'yearly_seasonality': True
         }
@@ -265,10 +265,10 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
         # Get latest values
         latest_price = float(data['Close'].iloc[-1])
         daily_change = ((latest_price - float(data['Close'].iloc[-2])) / float(data['Close'].iloc[-2])) * 100
-
+        
         forecast_price = float(forecast['yhat'].iloc[-1])
         forecast_change = ((forecast_price - latest_price) / latest_price) * 100
-
+        
         confidence_range = float(forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1])
         confidence_percentage = (confidence_range / forecast_price) * 100 / 2
 
@@ -304,29 +304,29 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     """Display economic indicator information and analysis"""
     try:
         st.subheader("📊 Economic Indicator Analysis")
-
+        
         # Get indicator details
         indicator_info = economic_indicators.get_indicator_info(indicator)
-
+        
         # Display indicator information
         st.markdown(f"""
             **Indicator:** {indicator_info.get('description', indicator)}  
             **Frequency:** {indicator_info.get('frequency', 'N/A')}  
             **Units:** {indicator_info.get('units', 'N/A')}
         """)
-
+        
         # Get and display analysis
         analysis = economic_indicators.analyze_indicator(data, indicator)
         if analysis:
             col1, col2, col3 = st.columns(3)
-
+            
             with col1:
                 st.metric(
                     "Current Value",
                     f"{analysis['current_value']:.2f}",
                     f"{analysis['change_1d']:.2f}% (1d)"
                 )
-
+            
             with col2:
                 if analysis.get('change_1m') is not None:
                     st.metric(
@@ -334,7 +334,7 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
                         f"{analysis['current_value']:.2f}",
                         f"{analysis['change_1m']:.2f}% (1m)"
                     )
-
+            
             with col3:
                 st.metric(
                     "Average Value",
