@@ -154,6 +154,11 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         forecast['actual'] = np.nan
         forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
 
+        # Ensure forecast prices are non-negative
+        forecast['yhat'] = forecast['yhat'].clip(lower=0)
+        forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=0)
+        forecast['yhat_upper'] = forecast['yhat_upper'].clip(lower=0)
+
         logger.info("Forecast completed successfully")
         return forecast, None
 
