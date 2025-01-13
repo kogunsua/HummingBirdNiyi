@@ -460,4 +460,7 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
                 )
 
             with col2:
-                if analysis.get('change_1m') is
+                if analysis.get('change_1m') is not None:
+                    st.metric(
+                        "Monthly Change",
+                        f"{analysis['change_1m']:.2f}%"
