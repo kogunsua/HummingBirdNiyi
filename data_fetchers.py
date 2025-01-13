@@ -1,5 +1,4 @@
 # data_fetchers.py
-#
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -144,12 +143,12 @@ class EconomicIndicators:
             data = DataSourceManager.fetch_yahoo_data('IEF', Config.START, Config.TODAY)
             if data is not None:
                 return pd.DataFrame(data['Close']).reset_index()
-            
+
             # Try Alpha Vantage
             df = DataSourceManager.fetch_alpha_vantage_data('IEF')
             if df is not None:
                 return df[['Close']].reset_index().rename(columns={'date': 'index'})
-            
+
             return None
         except Exception as e:
             logger.warning(f"Error fetching IEF data: {str(e)}")
@@ -215,34 +214,7 @@ class AssetDataFetcher:
 
     def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching stock data"""
-        try:
-            logger.info(f"Fetching stock data for symbol: {symbol}")
-            
-            # Get data from Yahoo Finance
-            data = DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
-            
-            if data is not None and not data.empty:
-                # Ensure data has correct columns
-                required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-                for col in required_columns:
-                    if col not in data.columns:
-                        raise ValueError(f"Missing required column: {col}")
-                
-                # Convert index to datetime and remove timezone
-                data.index = pd.to_datetime(data.index).tz_localize(None)
-                
-                logger.info(f"Successfully fetched stock data for {symbol}")
-                logger.info(f"Data shape: {data.shape}")
-                logger.info(f"Date range: {data.index.min()} to {data.index.max()}")
-                
-                return data
-            
-            raise ValueError(f"No data available for {symbol}")
-        
-        except Exception as e:
-            logger.error(f"Error fetching stock data: {str(e)}")
-            st.error(f"Could not fetch data for {symbol}. Please verify the symbol.")
-            return None
+        return DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
 
     def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching crypto data"""
@@ -272,7 +244,7 @@ class AssetDataFetcher:
         mappings = AssetDataFetcher._get_crypto_mappings(symbol)
         logger.info(f"Using mappings: {mappings}")
         error_messages = []
-        
+
         try:
             logger.info(f"Attempting to fetch {symbol} from CoinGecko...")
             cg = CoinGeckoAPI()
@@ -342,7 +314,7 @@ class RealEstateIndicators:
         except Exception as e:
             logger.error(f"Error fetching real estate data: {str(e)}")
             return None
-    
+
     def analyze_indicator(self, df: pd.DataFrame, indicator: str) -> dict:
         """Analyze a real estate indicator and return key statistics"""
         if df is None or df.empty:
