@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from config import Config
 from pycoingecko import CoinGeckoAPI
 import logging
+from gdelt_fetchers import GDELTFetcher
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -106,7 +107,18 @@ class EconomicIndicators:
 
     def get_indicator_data(self, indicator: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching indicator data"""
-        return self._fetch_indicator_data(indicator)
+        if indicator == 'POLSENT':
+            gdelt_fetcher = GDELTFetcher()
+            df = gdelt_fetcher.fetch_sentiment_data(Config.START, Config.TODAY)
+            if df is not None:
+                sentiment_df = pd.DataFrame({
+                    'index': df['ds'],
+                    'value': df['sentiment_score']
+                })
+                return sentiment_df
+            return None
+        else:
+            return self._fetch_indicator_data(indicator)
 
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
@@ -191,16 +203,29 @@ class EconomicIndicators:
             return {}
             
         try:
-            stats = {
-                'current_value': df['value'].iloc[-1],
-                'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
-                'change_1m': (df['value'].iloc[-1] - df['value'].iloc[-30]) / df['value'].iloc[-30] * 100 if len(df) >= 30 else None,
-                'min_value': df['value'].min(),
-                'max_value': df['value'].max(),
-                'avg_value': df['value'].mean(),
-                'std_dev': df['value'].std()
-            }
-            return stats
+            if indicator == 'POLSENT':
+                stats = {
+                    'current_value': df['value'].iloc[-1],
+                    'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
+                    'change_1m': (df['value'].iloc[-1] - df['value'].iloc[-30]) / df['value'].iloc[-30] * 100 if len(df) >= 30 else None,
+                    'min_value': df['value'].min(),
+                    'max_value': df['value'].max(),
+                    'avg_value': df['value'].mean(),
+                    'std_dev': df['value'].std(),
+                    'sentiment_volatility': df['value'].rolling(window=7).std().iloc[-1]
+                }
+                return stats
+            else:
+                stats = {
+                    'current_value': df['value'].iloc[-1],
+                    'change_1d': (df['value'].iloc[-1] - df['value'].iloc[-2]) / df['value'].iloc[-2] * 100,
+                    'change_1m': (df['value'].iloc[-1] - df['value'].iloc[-30]) / df['value'].iloc[-30] * 100 if len(df) >= 30 else None,
+                    'min_value': df['value'].min(),
+                    'max_value': df['value'].max(),
+                    'avg_value': df['value'].mean(),
+                    'std_dev': df['value'].std()
+                }
+                return stats
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
@@ -296,4 +321,9 @@ class AssetDataFetcher:
                 logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
                 return data
             error_messages.append("Yahoo Finance: No data returned")
-        except Exception
+        except Exception as e:
+            error_messages.append(f"Yahoo Finance: {str(e)}")
+            logger.warning(f"Yahoo Finance fetch failed for {symbol}: {str(e)}")
+
+        st.error(f"Failed to fetch crypto data for {symbol} from all sources: {', '.join(error_messages)}")
+        return None
