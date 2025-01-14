@@ -289,3 +289,112 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     except Exception as e:
         logger.error(f"Error displaying economic indicators: {str(e)}")
         st.error(f"Error displaying economic indicators: {str(e)}")
+        
+        def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display cryptocurrency-specific metrics"""
+    try:
+        st.subheader("🪙 Cryptocurrency Metrics")
+
+        # Volume Analysis
+        vol_col1, vol_col2 = st.columns(2)
+        with vol_col1:
+            volume = float(data['Volume'].iloc[-1])
+            volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
+            st.metric(
+                "24h Volume",
+                f"${volume:,.0f}",
+                f"{volume_change:+.2f}%"
+            )
+
+        with vol_col2:
+            if 'volume_ratio' in data.columns:
+                vol_ratio = float(data['volume_ratio'].iloc[-1])
+                st.metric(
+                    "Volume Ratio",
+                    f"{vol_ratio:.2f}",
+                    "Above Average" if vol_ratio > 1 else "Below Average"
+                )
+
+        # Volatility Metrics
+        vol_metrics_col1, vol_metrics_col2 = st.columns(2)
+        with vol_metrics_col1:
+            if 'hourly_volatility' in data.columns:
+                hourly_vol = float(data['hourly_volatility'].iloc[-1] * 100)
+                st.metric(
+                    "Hourly Volatility",
+                    f"{hourly_vol:.2f}%"
+                )
+
+        with vol_metrics_col2:
+            if 'volatility_ratio' in data.columns:
+                vol_ratio = float(data['volatility_ratio'].iloc[-1])
+                st.metric(
+                    "Volatility Trend",
+                    "Increasing" if vol_ratio > 1 else "Decreasing"
+                )
+
+        # Market Metrics
+        if 'market_dominance' in data.columns:
+            st.metric(
+                "Market Dominance",
+                f"{float(data['market_dominance'].iloc[-1] * 100):.2f}%"
+            )
+
+        # Network Metrics
+        if all(col in data.columns for col in ['network_transactions', 'active_addresses']):
+            net_col1, net_col2 = st.columns(2)
+            with net_col1:
+                st.metric("Network Transactions", f"{int(data['network_transactions'].iloc[-1]):,}")
+            with net_col2:
+                st.metric("Active Addresses", f"{int(data['active_addresses'].iloc[-1]):,}")
+
+    except Exception as e:
+        logger.error(f"Error displaying crypto metrics: {str(e)}")
+        st.error(f"Error displaying crypto metrics: {str(e)}")
+
+def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
+    """Display enhanced metrics with confidence analysis based on asset type"""
+    try:
+        # Display common metrics first
+        display_common_metrics(data, forecast)
+
+        # Display asset-specific metrics
+        if asset_type.lower() == 'crypto':
+            display_crypto_metrics(data, forecast, symbol)
+
+        # Display confidence analysis
+        display_confidence_analysis(forecast)
+
+    except Exception as e:
+        logger.error(f"Error displaying metrics: {str(e)}")
+        st.error(f"Error displaying metrics: {str(e)}")
+
+def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
+    """Display economic indicator information and analysis"""
+    try:
+        st.subheader("📊 Economic Indicator Analysis")
+
+        # Get indicator details
+        indicator_info = economic_indicators.get_indicator_info(indicator)
+
+        # Display indicator information
+        st.markdown(f"""
+            **Indicator:** {indicator_info.get('description', indicator)}  
+            **Frequency:** {indicator_info.get('frequency', 'N/A')}  
+            **Units:** {indicator_info.get('units', 'N/A')}
+        """)
+
+        # Get and display analysis
+        analysis = economic_indicators.analyze_indicator(data, indicator)
+        if analysis:
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric(
+                    "Current Value",
+                    f"{analysis['current_value']:.2f}",
+                    f"{analysis['change_1d']:.2f}% (1d)"
+                )
+
+            with col2:
+                if analysis.get('change_1m')
