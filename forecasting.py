@@ -460,4 +460,25 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
                 )
 
             with col2:
-                if analysis.get('change_1m')
+                if analysis.get('change_1m') is not None:
+                    st.metric(
+                        "30-Day Change",
+                        f"{analysis['change_1m']:.2f}%"
+                    )
+                
+            with col3:
+                if analysis.get('trend') is not None:
+                    st.metric(
+                        "Trend",
+                        analysis.get('trend', 'Neutral'),
+                        f"{analysis.get('trend_strength', '0')}%"
+                    )
+                
+        # Display correlation analysis if available
+        if analysis and 'correlation' in analysis:
+            st.subheader("Correlation Analysis")
+            st.write(f"Correlation with price: {analysis['correlation']:.2f}")
+            
+    except Exception as e:
+        logger.error(f"Error displaying economic indicators: {str(e)}")
+        st.error(f"Error displaying economic indicators: {str(e)}")
