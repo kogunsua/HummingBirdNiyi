@@ -13,517 +13,134 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
-    """Prepare data for Prophet model"""
-    try:
-        logger.info("Starting data preparation for Prophet")
-        logger.info(f"Input data shape: {data.shape}")
-        logger.info(f"Input data columns: {data.columns.tolist()}")
-
-        # Make a copy of the data
-        df = data.copy()
-
-        # If the DataFrame has a DatetimeIndex, reset it to a column
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            df.rename(columns={'index': 'ds'}, inplace=True)
-
-        # If 'Close' column exists, use it as 'y'
-        if 'Close' in df.columns:
-            if 'ds' not in df.columns:  # If we haven't set 'ds' from the index
-                date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
-                if date_cols:
-                    df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
-                else:
-                    df['ds'] = df.index
-
-            df['y'] = df['Close']
-        else:
-            # If no 'Close' column, use the first numeric column as 'y'
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) > 0:
-                if 'ds' not in df.columns:
-                    df['ds'] = df.index
-                df['y'] = df[numeric_cols[0]]
-
-        # Ensure 'ds' is datetime
-        df['ds'] = pd.to_datetime(df['ds'])
-
-        # Ensure 'y' is float
-        df['y'] = df['y'].astype(float)
-
-        # Select only required columns and sort by date
-        prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
-        # Drop NaN values
-        prophet_df = prophet_df.dropna()
-
-        logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
-        logger.info(f"Prophet DataFrame columns: {prophet_df.columns.tolist()}")
-        logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
-
-        # Validate the prepared data
-        if prophet_df.empty:
-            raise ValueError("Prepared DataFrame is empty")
-        if not np.isfinite(prophet_df['y']).all():
-            raise ValueError("Data contains non-finite values")
-        if prophet_df['ds'].isna().any():
-            raise ValueError("Date column contains missing values")
-
-        return prophet_df
-
-    except Exception as e:
-        logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
-        raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
+    """[Your existing prepare_data_for_prophet function]"""
+    # ... [Keep your existing implementation]
 
 def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Add cryptocurrency-specific indicators"""
-    try:
-        # Market Volume Analysis
-        df['volume_ma'] = df['Volume'].rolling(window=24).mean()
-        df['volume_ratio'] = df['Volume'] / df['volume_ma']
-        
-        # Volatility Indicators
-        df['hourly_volatility'] = df['Close'].pct_change().rolling(window=24).std()
-        df['volatility_ratio'] = df['hourly_volatility'] / df['hourly_volatility'].rolling(window=168).mean()
-        
-        # Price Momentum
-        df['momentum_1h'] = df['Close'].pct_change(periods=1)
-        df['momentum_24h'] = df['Close'].pct_change(periods=24)
-        df['momentum_ratio'] = df['momentum_1h'] / df['momentum_24h']
-        
-        # Market Dominance (placeholder - replace with actual data)
-        df['market_dominance'] = 0.5
-        
-        # Network Metrics (placeholder - replace with actual data)
-        df['network_transactions'] = 0.5
-        df['active_addresses'] = 0.5
-        
-        return df
-        
-    except Exception as e:
-        logger.error(f"Error adding crypto indicators: {str(e)}")
-        return df
+    """[Your existing add_crypto_specific_indicators function]"""
+    # ... [Keep your existing implementation]
 
 def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
-    """Add technical indicators based on asset type"""
-    try:
-        # Get configuration
-        config = AssetConfig.get_config(asset_type)
-        indicators = config['indicators']
-        
-        # Add base technical indicators with configured parameters
-        df['MA5'] = df['Close'].rolling(window=indicators['ma_periods'][0]).mean()
-        df['MA20'] = df['Close'].rolling(window=indicators['ma_periods'][1]).mean()
-        df['MA50'] = df['Close'].rolling(window=indicators['ma_periods'][2]).mean()
-        
-        # RSI with configured period
-        delta = df['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=indicators['rsi_period']).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=indicators['rsi_period']).mean()
-        rs = gain / loss
-        df['RSI'] = 100 - (100 / (1 + rs))
-        
-        # MACD with configured periods
-        macd_fast, macd_slow, signal = indicators['macd_periods']
-        exp1 = df['Close'].ewm(span=macd_fast, adjust=False).mean()
-        exp2 = df['Close'].ewm(span=macd_slow, adjust=False).mean()
-        df['MACD'] = exp1 - exp2
-        df['Signal_Line'] = df['MACD'].ewm(span=signal, adjust=False).mean()
-        
-        # Add crypto-specific indicators if needed
-        if asset_type.lower() == 'crypto':
-            df = add_crypto_specific_indicators(df)
-            
-        return df
-        
-    except Exception as e:
-        logger.error(f"Error in add_technical_indicators: {str(e)}")
-        return df
+    """[Your existing add_technical_indicators function]"""
+    # ... [Keep your existing implementation]
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
                      indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Generate forecast using Prophet model with economic and sentiment data"""
-    try:
-        logger.info(f"Starting forecast for {periods} periods")
-
-        # Prepare data for Prophet
-        prophet_df = prepare_data_for_prophet(data)
-
-        if prophet_df is None or prophet_df.empty:
-            raise ValueError("No valid data for forecasting")
-
-        # Get model configuration based on asset type
-        config = AssetConfig.get_config(asset_type)
-        model_config = config['model_config']
-
-        # Initialize Prophet with parameters
-        model = Prophet(
-            changepoint_prior_scale=model_config['changepoint_prior_scale'],
-            n_changepoints=model_config['n_changepoints'],
-            seasonality_mode=model_config['seasonality_mode'],
-            yearly_seasonality=model_config['yearly_seasonality'],
-            weekly_seasonality=model_config['weekly_seasonality'],
-            daily_seasonality=model_config['daily_seasonality'],
-            interval_width=model_config['interval_width']
-        )
-
-        # Add monthly seasonality
-        model.add_seasonality(
-            name='monthly',
-            period=30.5,
-            fourier_order=5
-        )
-
-        # Add economic indicator if available
-        if economic_data is not None:
-            logger.info("Processing economic indicator data")
-            if indicator == 'POLSENT':
-                # Special handling for sentiment data
-                economic_df = economic_data.copy()
-                economic_df.columns = ['ds', 'sentiment']
-                prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
-
-                # Fill missing values with rolling mean
-                prophet_df['sentiment'] = prophet_df['sentiment'].fillna(
-                    prophet_df['sentiment'].rolling(window=7, min_periods=1).mean()
-                )
-
-                # Add sentiment as a regressor
-                model.add_regressor('sentiment', mode='multiplicative')
-            else:
-                # Handle other indicators as before
-                economic_df = economic_data.copy()
-                economic_df.columns = ['ds', 'economic_indicator']
-                prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
-                prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(
-                    method='ffill'
-                ).fillna(method='bfill')
-                model.add_regressor('economic_indicator', mode='multiplicative')
-
-        # Fit the model
-        model.fit(prophet_df)
-
-        # Create future DataFrame
-        future = model.make_future_dataframe(periods=periods)
-
-        # Add economic indicator to future if available
-        if economic_data is not None:
-            if indicator == 'POLSENT':
-                future = future.merge(economic_df[['ds', 'sentiment']], on='ds', how='left')
-                future['sentiment'] = future['sentiment'].fillna(
-                    prophet_df['sentiment'].mean()
-                )
-            else:
-                future = future.merge(economic_df, on='ds', how='left')
-                future['economic_indicator'] = future['economic_indicator'].fillna(
-                    method='ffill'
-                ).fillna(method='bfill')
-
-        # Generate forecast
-        forecast = model.predict(future)
-
-        # Add actual values
-        forecast['actual'] = np.nan
-        forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
-
-        logger.info("Forecast completed successfully")
-        return forecast, None
-
-    except Exception as e:
-        logger.error(f"Error in prophet_forecast: {str(e)}")
-        return None, str(e)
+    """[Your existing prophet_forecast function]"""
+    # ... [Keep your existing implementation]
 
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
-    """Create an interactive plot with historical data and forecast with multiple confidence intervals"""
-    try:
-        # Create figure with secondary y-axis for volume
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
-                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
-
-        # Historical Data
-        if isinstance(data.index, pd.DatetimeIndex):
-            historical_dates = data.index
-        else:
-            historical_dates = pd.to_datetime(data['Date'] if 'Date' in data.columns else data['timestamp'])
-        historical_values = data['Close'] if 'Close' in data.columns else data.iloc[:, 0]
-
-        # Add historical data
-        fig.add_trace(
-            go.Candlestick(
-                x=historical_dates,
-                open=data['Open'],
-                high=data['High'],
-                low=data['Low'],
-                close=historical_values,
-                name='Historical',
-                increasing_line_color='green',
-                decreasing_line_color='red'
-            ),
-            row=1, col=1
-        )
-
-        # Add forecast line
-        fig.add_trace(
-            go.Scatter(
-                x=forecast['ds'],
-                y=forecast['yhat'],
-                name=f'{model_name} Forecast',
-                line=dict(color='blue', dash='dash'),
-                hovertemplate='Date: %{x}<br>Forecast: $%{y:.2f}<extra></extra>'
-            ),
-            row=1, col=1
-        )
-
-        # Add 95% confidence interval
-        fig.add_trace(
-            go.Scatter(
-                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
-                y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
-                fill='toself',
-                fillcolor='rgba(0,100,255,0.1)',
-                line=dict(color='rgba(0,0,0,0)'),
-                name='95% Confidence',
-                hoverinfo='skip'
-            ),
-            row=1, col=1
-        )
-
-        # Add 80% confidence interval
-        upper_80 = forecast['yhat'] + (forecast['yhat_upper'] - forecast['yhat']) * 0.8
-        lower_80 = forecast['yhat'] - (forecast['yhat'] - forecast['yhat_lower']) * 0.8
-        
-        fig.add_trace(
-            go.Scatter(
-                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
-                y=pd.concat([upper_80, lower_80[::-1]]),
-                fill='toself',
-                fillcolor='rgba(0,100,255,0.2)',
-                line=dict(color='rgba(0,0,0,0)'),
-                name='80% Confidence',
-                hoverinfo='skip'
-            ),
-            row=1, col=1
-        )
-
-        # Add confidence width analysis
-        confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
-        fig.add_trace(
-            go.Scatter(
-                x=forecast['ds'],
-                y=confidence_width,
-                name='Confidence Width %',
-                line=dict(color='purple'),
-                hovertemplate='Date: %{x}<br>Width: %{y:.1f}%<extra></extra>'
-            ),
-            row=2, col=1
-        )
-
-        # Update layout
-        fig.update_layout(
-            title={
-                'text': f'{symbol} Price Forecast with Confidence Analysis',
-                'y':0.95,
-                'x':0.5,
-                'xanchor': 'center',
-                'yanchor': 'top'
-            },
-            yaxis_title='Price ($)',
-            yaxis2_title='Confidence Width (%)',
-            hovermode='x unified',
-            showlegend=True,
-            template='plotly_white',
-            height=800,
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01
-            ),
-            margin=dict(l=50, r=50, t=50, b=50)
-        )
-
-        # Update axes
-        fig.update_xaxes(gridcolor='LightGray', showgrid=True)
-        fig.update_yaxes(gridcolor='LightGray', showgrid=True)
-
-        return fig
-
-    except Exception as e:
-        logger.error(f"Error creating forecast plot: {str(e)}")
-        st.error(f"Error creating plot: {str(e)}")
-        return None
-
-def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
-    """Display cryptocurrency-specific metrics"""
-    try:
-        st.subheader("🪙 Cryptocurrency Metrics")
-
-        # Volume Analysis
-        vol_col1, vol_col2 = st.columns(2)
-        with vol_col1:
-            volume = float(data['Volume'].iloc[-1])
-            volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
-            st.metric(
-                "24h Volume",
-                f"${volume:,.0f}",
-                f"{volume_change:+.2f}%"
-            )
-
-        with vol_col2:
-            if 'volume_ratio' in data.columns:
-                vol_ratio = float(data['volume_ratio'].iloc[-1])
-                st.metric(
-                    "Volume Ratio",
-                    f"{vol_ratio:.2f}",
-                    "Above Average" if vol_ratio > 1 else "Below Average"
-                )
-
-        # Volatility Metrics
-        vol_metrics_col1, vol_metrics_col2 = st.columns(2)
-        with vol_metrics_col1:
-            if 'hourly_volatility' in data.columns:
-                hourly_vol = float(data['hourly_volatility'].iloc[-1] * 100)
-                st.metric(
-                    "Hourly Volatility",
-                    f"{hourly_vol:.2f}%"
-                )
-
-        with vol_metrics_col2:
-            if 'volatility_ratio' in data.columns:
-                vol_ratio = float(data['volatility_ratio'].iloc[-1])
-                st.metric(
-                    "Volatility Trend",
-                    "Increasing" if vol_ratio > 1 else "Decreasing"
-                )
-
-        # Market Metrics
-        if 'market_dominance' in data.columns:
-            st.metric(
-                "Market Dominance",
-                f"{float(data['market_dominance'].iloc[-1] * 100):.2f}%"
-            )
-
-        # Network Metrics
-        if all(col in data.columns for col in ['network_transactions', 'active_addresses']):
-            net_col1, net_col2 = st.columns(2)
-            with net_col1:
-                st.metric("Network Transactions", f"{int(data['network_transactions'].iloc[-1]):,}")
-            with net_col2:
-                st.metric("Active Addresses", f"{int(data['active_addresses'].iloc[-1]):,}")
-
-    except Exception as e:
-        logger.error(f"Error displaying crypto metrics: {str(e)}")
-        st.error(f"Error displaying crypto metrics: {str(e)}")
+    """[Your existing create_forecast_plot function]"""
+    # ... [Keep your existing implementation]
 
 def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
     """Display common metrics for both stocks and cryptocurrencies"""
     try:
         st.subheader("📈 Price Metrics")
         
-        # Calculate current price and changes
-        # Handle both DataFrame and Series cases
-        current_price = float(data['Close'].iloc[-1] if isinstance(data['Close'], pd.Series) else data['Close'][-1])
-        price_change_24h = float(data['Close'].pct_change().iloc[-1] * 100)
-        
-        # Calculate 7-day change
-        price_change_7d = float(data['Close'].pct_change(periods=7).iloc[-1] * 100)
-        
-        # Price Metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(
-                "Current Price",
-                f"${current_price:,.2f}",
-                f"{price_change_24h:+.2f}%"
-            )
-        
-        with col2:
-            st.metric(
-                "7-Day Change",
-                f"{price_change_7d:+.2f}%"
-            )
-        
-        with col3:
-            # Calculate 30-day volatility
-            volatility_30d = float(data['Close'].pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
-            st.metric(
-                "30-Day Volatility",
-                f"{volatility_30d:.2f}%"
-            )
-        
-        # Technical Indicators
-        st.subheader("📊 Technical Indicators")
-        tech_col1, tech_col2, tech_col3 = st.columns(3)
-        
-        with tech_col1:
-            # RSI
-            if 'RSI' in data.columns:
-                current_rsi = float(data['RSI'].iloc[-1])
-                rsi_change = float(data['RSI'].diff().iloc[-1])
+        # Ensure we have the required data
+        if 'Close' not in data.columns:
+            raise ValueError("Close price data not found in dataset")
+            
+        # Handle data access safely
+        try:
+            current_price = float(data['Close'].iloc[-1] if isinstance(data['Close'], pd.Series) else data['Close'][-1])
+            price_change_24h = float(data['Close'].pct_change().iloc[-1] * 100)
+            price_change_7d = float(data['Close'].pct_change(periods=7).iloc[-1] * 100)
+            
+            # Price Metrics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
                 st.metric(
-                    "RSI (14)",
-                    f"{current_rsi:.2f}",
-                    f"{rsi_change:+.2f}"
+                    "Current Price",
+                    f"${current_price:,.2f}",
+                    f"{price_change_24h:+.2f}%"
                 )
-        
-        with tech_col2:
-            # MACD
-            if 'MACD' in data.columns and 'Signal_Line' in data.columns:
-                current_macd = float(data['MACD'].iloc[-1])
-                macd_signal = float(data['Signal_Line'].iloc[-1])
+            
+            with col2:
                 st.metric(
-                    "MACD",
-                    f"{current_macd:.2f}",
-                    f"Signal: {macd_signal:.2f}"
+                    "7-Day Change",
+                    f"{price_change_7d:+.2f}%"
                 )
-        
-        with tech_col3:
-            # Moving Averages
-            if 'MA20' in data.columns:
-                ma20 = float(data['MA20'].iloc[-1])
-                ma20_diff = float(current_price - ma20)
+            
+            with col3:
+                volatility_30d = float(data['Close'].pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
                 st.metric(
-                    "20-Day MA",
-                    f"${ma20:.2f}",
-                    f"{ma20_diff:+.2f} from price"
+                    "30-Day Volatility",
+                    f"{volatility_30d:.2f}%"
                 )
-        
-        # Forecast Metrics
-        st.subheader("🔮 Forecast Metrics")
-        forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
-        
-        with forecast_col1:
-            # End of forecast price
-            final_forecast = float(forecast['yhat'].iloc[-1])
-            forecast_change = ((final_forecast / current_price) - 1) * 100
-            st.metric(
-                "Forecast End Price",
-                f"${final_forecast:.2f}",
-                f"{forecast_change:+.2f}%"
-            )
-        
-        with forecast_col2:
-            # Forecast confidence
-            confidence_width = float((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / forecast['yhat'].iloc[-1] * 100)
-            st.metric(
-                "Forecast Confidence",
-                f"{100 - confidence_width:.1f}%"
-            )
-        
-        with forecast_col3:
-            # Trend strength
-            trend_strength = float(abs(forecast_change) / confidence_width * 100)
-            st.metric(
-                "Trend Strength",
-                f"{trend_strength:.1f}%"
-            )
+            
+            # Technical Indicators
+            st.subheader("📊 Technical Indicators")
+            tech_col1, tech_col2, tech_col3 = st.columns(3)
+            
+            with tech_col1:
+                if 'RSI' in data.columns:
+                    current_rsi = float(data['RSI'].iloc[-1])
+                    rsi_change = float(data['RSI'].diff().iloc[-1])
+                    st.metric(
+                        "RSI (14)",
+                        f"{current_rsi:.2f}",
+                        f"{rsi_change:+.2f}"
+                    )
+            
+            with tech_col2:
+                if 'MACD' in data.columns and 'Signal_Line' in data.columns:
+                    current_macd = float(data['MACD'].iloc[-1])
+                    macd_signal = float(data['Signal_Line'].iloc[-1])
+                    st.metric(
+                        "MACD",
+                        f"{current_macd:.2f}",
+                        f"Signal: {macd_signal:.2f}"
+                    )
+            
+            with tech_col3:
+                if 'MA20' in data.columns:
+                    ma20 = float(data['MA20'].iloc[-1])
+                    ma20_diff = float(current_price - ma20)
+                    st.metric(
+                        "20-Day MA",
+                        f"${ma20:.2f}",
+                        f"{ma20_diff:+.2f} from price"
+                    )
+            
+            # Forecast Metrics
+            st.subheader("🔮 Forecast Metrics")
+            forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
+            
+            with forecast_col1:
+                final_forecast = float(forecast['yhat'].iloc[-1])
+                forecast_change = ((final_forecast / current_price) - 1) * 100
+                st.metric(
+                    "Forecast End Price",
+                    f"${final_forecast:.2f}",
+                    f"{forecast_change:+.2f}%"
+                )
+            
+            with forecast_col2:
+                confidence_width = float((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / forecast['yhat'].iloc[-1] * 100)
+                st.metric(
+                    "Forecast Confidence",
+                    f"{100 - confidence_width:.1f}%"
+                )
+            
+            with forecast_col3:
+                trend_strength = float(abs(forecast_change) / confidence_width * 100)
+                st.metric(
+                    "Trend Strength",
+                    f"{trend_strength:.1f}%"
+                )
+
+        except Exception as e:
+            logger.error(f"Error processing metrics: {str(e)}")
+            st.error("Error processing metrics. Please check your data format.")
 
     except Exception as e:
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
-        
-        def display_confidence_analysis(forecast: pd.DataFrame):
+
+def display_confidence_analysis(forecast: pd.DataFrame):
     """Display detailed confidence analysis of the forecast"""
     try:
         st.subheader("📊 Confidence Analysis")
@@ -595,77 +212,6 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
     except Exception as e:
         logger.error(f"Error displaying confidence analysis: {str(e)}")
         st.error(f"Error displaying confidence analysis: {str(e)}")
-        
-        # Technical Indicators
-        st.subheader("📊 Technical Indicators")
-        tech_col1, tech_col2, tech_col3 = st.columns(3)
-        
-        with tech_col1:
-            # RSI
-            if 'RSI' in data.columns:
-                current_rsi = float(data['RSI'].iloc[-1])
-                rsi_change = float(data['RSI'].diff().iloc[-1])
-                st.metric(
-                    "RSI (14)",
-                    f"{current_rsi:.2f}",
-                    f"{rsi_change:+.2f}"
-                )
-        
-        with tech_col2:
-            # MACD
-            if 'MACD' in data.columns and 'Signal_Line' in data.columns:
-                current_macd = float(data['MACD'].iloc[-1])
-                macd_signal = float(data['Signal_Line'].iloc[-1])
-                st.metric(
-                    "MACD",
-                    f"{current_macd:.2f}",
-                    f"Signal: {macd_signal:.2f}"
-                )
-        
-        with tech_col3:
-            # Moving Averages
-            if 'MA20' in data.columns:
-                ma20 = float(data['MA20'].iloc[-1])
-                ma20_diff = float(current_price - ma20)
-                st.metric(
-                    "20-Day MA",
-                    f"${ma20:.2f}",
-                    f"{ma20_diff:+.2f} from price"
-                )
-        
-        # Forecast Metrics
-        st.subheader("🔮 Forecast Metrics")
-        forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
-        
-        with forecast_col1:
-            # End of forecast price
-            final_forecast = float(forecast['yhat'].iloc[-1])
-            forecast_change = ((final_forecast / current_price) - 1) * 100
-            st.metric(
-                "Forecast End Price",
-                f"${final_forecast:.2f}",
-                f"{forecast_change:+.2f}%"
-            )
-        
-        with forecast_col2:
-            # Forecast confidence
-            confidence_width = float((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / forecast['yhat'].iloc[-1] * 100)
-            st.metric(
-                "Forecast Confidence",
-                f"{100 - confidence_width:.1f}%"
-            )
-        
-        with forecast_col3:
-            # Trend strength
-            trend_strength = float(abs(forecast_change) / confidence_width * 100)
-            st.metric(
-                "Trend Strength",
-                f"{trend_strength:.1f}%"
-            )
-
-    except Exception as e:
-        logger.error(f"Error displaying common metrics: {str(e)}")
-        st.error(f"Error displaying common metrics: {str(e)}")
 
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
     """Display enhanced metrics with confidence analysis based on asset type"""
@@ -683,6 +229,14 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
         st.error(f"Error displaying metrics: {str(e)}")
+
+def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """[Your existing display_crypto_metrics function]"""
+    # ... [Keep your existing implementation]
+
+def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
+    """[Your existing display_economic_indicators function]"""
+    # ... [Keep your existing implementation]
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
     """Display economic indicator information and analysis"""
