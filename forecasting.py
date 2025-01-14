@@ -421,7 +421,8 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
         st.subheader("📈 Price Metrics")
         
         # Calculate current price and changes
-        current_price = float(data['Close'].iloc[-1])
+        # Handle both DataFrame and Series cases
+        current_price = float(data['Close'].iloc[-1] if isinstance(data['Close'], pd.Series) else data['Close'][-1])
         price_change_24h = float(data['Close'].pct_change().iloc[-1] * 100)
         
         # Calculate 7-day change
@@ -450,6 +451,150 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
                 "30-Day Volatility",
                 f"{volatility_30d:.2f}%"
             )
+        
+        # Technical Indicators
+        st.subheader("📊 Technical Indicators")
+        tech_col1, tech_col2, tech_col3 = st.columns(3)
+        
+        with tech_col1:
+            # RSI
+            if 'RSI' in data.columns:
+                current_rsi = float(data['RSI'].iloc[-1])
+                rsi_change = float(data['RSI'].diff().iloc[-1])
+                st.metric(
+                    "RSI (14)",
+                    f"{current_rsi:.2f}",
+                    f"{rsi_change:+.2f}"
+                )
+        
+        with tech_col2:
+            # MACD
+            if 'MACD' in data.columns and 'Signal_Line' in data.columns:
+                current_macd = float(data['MACD'].iloc[-1])
+                macd_signal = float(data['Signal_Line'].iloc[-1])
+                st.metric(
+                    "MACD",
+                    f"{current_macd:.2f}",
+                    f"Signal: {macd_signal:.2f}"
+                )
+        
+        with tech_col3:
+            # Moving Averages
+            if 'MA20' in data.columns:
+                ma20 = float(data['MA20'].iloc[-1])
+                ma20_diff = float(current_price - ma20)
+                st.metric(
+                    "20-Day MA",
+                    f"${ma20:.2f}",
+                    f"{ma20_diff:+.2f} from price"
+                )
+        
+        # Forecast Metrics
+        st.subheader("🔮 Forecast Metrics")
+        forecast_col1, forecast_col2, forecast_col3 = st.columns(3)
+        
+        with forecast_col1:
+            # End of forecast price
+            final_forecast = float(forecast['yhat'].iloc[-1])
+            forecast_change = ((final_forecast / current_price) - 1) * 100
+            st.metric(
+                "Forecast End Price",
+                f"${final_forecast:.2f}",
+                f"{forecast_change:+.2f}%"
+            )
+        
+        with forecast_col2:
+            # Forecast confidence
+            confidence_width = float((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) / forecast['yhat'].iloc[-1] * 100)
+            st.metric(
+                "Forecast Confidence",
+                f"{100 - confidence_width:.1f}%"
+            )
+        
+        with forecast_col3:
+            # Trend strength
+            trend_strength = float(abs(forecast_change) / confidence_width * 100)
+            st.metric(
+                "Trend Strength",
+                f"{trend_strength:.1f}%"
+            )
+
+    except Exception as e:
+        logger.error(f"Error displaying common metrics: {str(e)}")
+        st.error(f"Error displaying common metrics: {str(e)}")
+        
+        def display_confidence_analysis(forecast: pd.DataFrame):
+    """Display detailed confidence analysis of the forecast"""
+    try:
+        st.subheader("📊 Confidence Analysis")
+
+        # Calculate confidence metrics
+        confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
+        avg_confidence = 100 - confidence_width.mean()
+        
+        # Calculate trend metrics
+        total_trend = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100
+        trend_consistency = np.sum(np.diff(forecast['yhat']) > 0) / (len(forecast) - 1) * 100
+
+        # Display metrics in columns
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Average Confidence",
+                f"{avg_confidence:.1f}%",
+                "Higher is better"
+            )
+
+        with col2:
+            st.metric(
+                "Overall Trend",
+                f"{total_trend:+.1f}%",
+                f"{'Upward' if total_trend > 0 else 'Downward'} Trend"
+            )
+
+        with col3:
+            st.metric(
+                "Trend Consistency",
+                f"{trend_consistency:.1f}%",
+                "% of positive daily changes"
+            )
+
+        # Display additional analysis
+        with st.expander("View Detailed Confidence Analysis"):
+            # Calculate confidence bands over time
+            confidence_df = pd.DataFrame({
+                'Date': forecast['ds'],
+                'Confidence Width (%)': confidence_width,
+                'Upper Band': forecast['yhat_upper'],
+                'Lower Band': forecast['yhat_lower'],
+                'Forecast': forecast['yhat']
+            })
+
+            # Show confidence statistics
+            st.write("**Confidence Statistics:**")
+            stats_col1, stats_col2 = st.columns(2)
+            
+            with stats_col1:
+                st.write("Confidence Width Statistics:")
+                st.write(f"- Minimum: {confidence_width.min():.1f}%")
+                st.write(f"- Maximum: {confidence_width.max():.1f}%")
+                st.write(f"- Average: {confidence_width.mean():.1f}%")
+            
+            with stats_col2:
+                st.write("Price Range at End of Forecast:")
+                last_idx = -1
+                st.write(f"- Upper: ${forecast['yhat_upper'].iloc[last_idx]:.2f}")
+                st.write(f"- Forecast: ${forecast['yhat'].iloc[last_idx]:.2f}")
+                st.write(f"- Lower: ${forecast['yhat_lower'].iloc[last_idx]:.2f}")
+
+            # Display confidence width trend
+            st.write("\n**Confidence Width Over Time:**")
+            st.line_chart(confidence_df.set_index('Date')['Confidence Width (%)'])
+
+    except Exception as e:
+        logger.error(f"Error displaying confidence analysis: {str(e)}")
+        st.error(f"Error displaying confidence analysis: {str(e)}")
         
         # Technical Indicators
         st.subheader("📊 Technical Indicators")
