@@ -27,9 +27,101 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
                      indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """[Your existing prophet_forecast function]"""
-    # ... [Keep your existing implementation]
+    """Generate forecast using Prophet model with economic and sentiment data"""
+    try:
+        logger.info(f"Starting forecast for {periods} periods")
 
+        if data is None or data.empty:
+            logger.error("No data provided for forecasting")
+            return None, "No data provided for forecasting"
+
+        # Prepare data for Prophet
+        try:
+            prophet_df = prepare_data_for_prophet(data)
+        except Exception as e:
+            logger.error(f"Error preparing data for Prophet: {str(e)}")
+            return None, f"Error preparing data: {str(e)}"
+
+        if prophet_df is None or prophet_df.empty:
+            return None, "No valid data for forecasting after preparation"
+
+        # Get model configuration based on asset type
+        config = AssetConfig.get_config(asset_type)
+        model_config = config['model_config']
+
+        try:
+            # Initialize Prophet with parameters
+            model = Prophet(
+                changepoint_prior_scale=model_config['changepoint_prior_scale'],
+                n_changepoints=model_config['n_changepoints'],
+                seasonality_mode=model_config['seasonality_mode'],
+                yearly_seasonality=model_config['yearly_seasonality'],
+                weekly_seasonality=model_config['weekly_seasonality'],
+                daily_seasonality=model_config['daily_seasonality'],
+                interval_width=model_config['interval_width']
+            )
+
+            # Add monthly seasonality
+            model.add_seasonality(
+                name='monthly',
+                period=30.5,
+                fourier_order=5
+            )
+
+            # Add economic indicator if available
+            if economic_data is not None:
+                logger.info("Processing economic indicator data")
+                if indicator == 'POLSENT':
+                    # Special handling for sentiment data
+                    economic_df = economic_data.copy()
+                    economic_df.columns = ['ds', 'sentiment']
+                    prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
+                    prophet_df['sentiment'] = prophet_df['sentiment'].fillna(
+                        prophet_df['sentiment'].rolling(window=7, min_periods=1).mean()
+                    )
+                    model.add_regressor('sentiment', mode='multiplicative')
+                else:
+                    economic_df = economic_data.copy()
+                    economic_df.columns = ['ds', 'economic_indicator']
+                    prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
+                    prophet_df['economic_indicator'] = prophet_df['economic_indicator'].fillna(
+                        method='ffill'
+                    ).fillna(method='bfill')
+                    model.add_regressor('economic_indicator', mode='multiplicative')
+
+            # Fit the model
+            model.fit(prophet_df)
+
+            # Create future DataFrame
+            future = model.make_future_dataframe(periods=periods)
+
+            # Add economic indicator to future if available
+            if economic_data is not None:
+                if indicator == 'POLSENT':
+                    future = future.merge(economic_df[['ds', 'sentiment']], on='ds', how='left')
+                    future['sentiment'] = future['sentiment'].fillna(prophet_df['sentiment'].mean())
+                else:
+                    future = future.merge(economic_df[['ds', 'economic_indicator']], on='ds', how='left')
+                    future['economic_indicator'] = future['economic_indicator'].fillna(method='ffill').fillna(method='bfill')
+
+            # Generate forecast
+            forecast = model.predict(future)
+
+            # Add actual values
+            forecast['actual'] = np.nan
+            forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
+
+            logger.info("Forecast completed successfully")
+            return forecast, None
+
+        except Exception as e:
+            logger.error(f"Error in forecasting process: {str(e)}")
+            return None, f"Error in forecasting process: {str(e)}"
+
+    except Exception as e:
+        logger.error(f"Error in prophet_forecast: {str(e)}")
+        return None, str(e)
+        
 def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
     """[Your existing create_forecast_plot function]"""
     # ... [Keep your existing implementation]
@@ -233,10 +325,6 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
 
 def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
     """[Your existing display_crypto_metrics function]"""
-    # ... [Keep your existing implementation]
-
-def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
-    """[Your existing display_economic_indicators function]"""
     # ... [Keep your existing implementation]
 
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
