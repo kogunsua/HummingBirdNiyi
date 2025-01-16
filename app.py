@@ -1,3 +1,4 @@
+#appy.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -5,6 +6,9 @@ from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
+    display_confidence_analysis,
+    display_common_metrics,
+    display_crypto_metrics,
     display_economic_indicators,
     add_technical_indicators
 )
