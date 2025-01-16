@@ -1,4 +1,4 @@
-#forcasting.py
+#forecasting.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -67,6 +67,30 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
 
+def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add cryptocurrency-specific indicators"""
+    try:
+        # Market Volume Analysis
+        df['volume_ma'] = df['Volume'].rolling(window=24).mean()
+        df['volume_ratio'] = df['Volume'] / df['volume_ma']
+        
+        # Volatility Indicators
+        df['hourly_volatility'] = df['Close'].pct_change().rolling(window=24).std()
+        df['volatility_ratio'] = df['hourly_volatility'] / df['hourly_volatility'].rolling(window=168).mean()
+        
+        # Market Dominance (placeholder)
+        df['market_dominance'] = 0.5
+        
+        # Network Metrics (placeholder)
+        df['network_transactions'] = 0.5
+        df['active_addresses'] = 0.5
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error adding crypto indicators: {str(e)}")
+        return df
+
 def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
     """Add technical indicators based on asset type"""
     try:
@@ -100,30 +124,6 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
         
     except Exception as e:
         logger.error(f"Error in add_technical_indicators: {str(e)}")
-        return df
-        
-        def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Add cryptocurrency-specific indicators"""
-    try:
-        # Market Volume Analysis
-        df['volume_ma'] = df['Volume'].rolling(window=24).mean()
-        df['volume_ratio'] = df['Volume'] / df['volume_ma']
-        
-        # Volatility Indicators
-        df['hourly_volatility'] = df['Close'].pct_change().rolling(window=24).std()
-        df['volatility_ratio'] = df['hourly_volatility'] / df['hourly_volatility'].rolling(window=168).mean()
-        
-        # Market Dominance (placeholder)
-        df['market_dominance'] = 0.5
-        
-        # Network Metrics (placeholder)
-        df['network_transactions'] = 0.5
-        df['active_addresses'] = 0.5
-        
-        return df
-        
-    except Exception as e:
-        logger.error(f"Error adding crypto indicators: {str(e)}")
         return df
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
@@ -227,8 +227,8 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
     except Exception as e:
         logger.error(f"Error creating forecast plot: {str(e)}")
         return None
-        
-        def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
+
+def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
     """Display common metrics for both stocks and cryptocurrencies"""
     try:
         st.subheader("📈 Price Metrics")
@@ -341,6 +341,9 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
         st.markdown(f"""
             **Indicator:** {indicator_info.get('description', indicator)}  
             **Frequency:** {indicator_info.get('frequency', 'N/A')}  
-            **Units:** {indicator_info.get('units', 'N/A'
-        
-        
+            **Units:** {indicator_info.get('units', 'N/A')}
+        """)
+
+    except Exception as e:
+        logger.error(f"Error displaying economic indicators: {str(e)}")
+        st.error(f"Error displaying economic indicators: {str(e)}")
