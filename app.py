@@ -136,7 +136,30 @@ def main():
                 if selected_indicator != 'None':
                     economic_indicators = EconomicIndicators()
                     economic_data = economic_indicators.get_indicator_data(selected_indicator)
-                    if economic_data is not None:
+                   
+                # In your app.py, update this section:
+if data is not None:
+    if selected_model != "Prophet":
+        st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+    
+    with st.spinner('Generating forecast...'):
+        forecast, error = prophet_forecast(data, periods, economic_data)
+        
+        if error:
+            st.error(f"Forecasting error: {error}")
+        elif forecast is not None:
+            # Add technical indicators to the data
+            data = add_technical_indicators(data, asset_type)
+            
+            display_metrics(data, forecast, asset_type, symbol)
+            
+            fig = create_forecast_plot(data, forecast, "Prophet", symbol)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            with st.expander("View Detailed Forecast Data"):
+                st.dataframe(forecast)
+else:
+    st.error(f"Could not load data for {symbol}. Please verify the symbol.")
                         display_economic_indicators(economic_data, selected_indicator, economic_indicators)
 
                 # Display Real Estate Indicator status if selected
