@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -6,7 +5,8 @@ from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
-    display_economic_indicators
+    display_economic_indicators,
+    add_technical_indicators
 )
 
 def display_footer():
@@ -18,13 +18,13 @@ def display_footer():
     """, unsafe_allow_html=True)
 
 def main():
-    st.set_page_config(
-        page_title="HummingBird v2-m",
-        page_icon="🐦",
-        layout="wide"
-    )
-    
     try:
+        st.set_page_config(
+            page_title="HummingBird v2-m",
+            page_icon="🐦",
+            layout="wide"
+        )
+        
         # Display branding
         st.markdown("""
             <div style='text-align: center;'>
@@ -127,70 +127,56 @@ def main():
         
         # Generate Forecast
         if st.button("🚀 Generate Forecast"):
-            with st.spinner('Loading data...'):
-                fetcher = AssetDataFetcher()
-                data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
-                
-                # Get economic indicator data
-                economic_data = None
-                if selected_indicator != 'None':
-                    economic_indicators = EconomicIndicators()
-                    economic_data = economic_indicators.get_indicator_data(selected_indicator)
-                   
-                # In your app.py, update this section:
-if data is not None:
-    if selected_model != "Prophet":
-        st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
-    
-    with st.spinner('Generating forecast...'):
-        forecast, error = prophet_forecast(data, periods, economic_data)
-        
-        if error:
-            st.error(f"Forecasting error: {error}")
-        elif forecast is not None:
-            # Add technical indicators to the data
-            data = add_technical_indicators(data, asset_type)
-            
-            display_metrics(data, forecast, asset_type, symbol)
-            
-            fig = create_forecast_plot(data, forecast, "Prophet", symbol)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            with st.expander("View Detailed Forecast Data"):
-                st.dataframe(forecast)
-else:
-    st.error(f"Could not load data for {symbol}. Please verify the symbol.")
-                        display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-
-                # Display Real Estate Indicator status if selected
-                if selected_re_indicator != 'None':
-                    st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
-                
-                if data is not None:
-                    if selected_model != "Prophet":
-                        st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+            try:
+                with st.spinner('Loading data...'):
+                    fetcher = AssetDataFetcher()
+                    data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
                     
-                    with st.spinner('Generating forecast...'):
-                        forecast, error = prophet_forecast(data, periods, economic_data)
+                    # Get economic indicator data
+                    economic_data = None
+                    if selected_indicator != 'None':
+                        economic_indicators = EconomicIndicators()
+                        economic_data = economic_indicators.get_indicator_data(selected_indicator)
+                        if economic_data is not None:
+                            display_economic_indicators(economic_data, selected_indicator, economic_indicators)
+
+                    # Display Real Estate Indicator status if selected
+                    if selected_re_indicator != 'None':
+                        st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
+                    
+                    if data is not None:
+                        if selected_model != "Prophet":
+                            st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
                         
-                        if error:
-                            st.error(f"Forecasting error: {error}")
-                        elif forecast is not None:
-                            display_metrics(data, forecast, asset_type, symbol)
+                        with st.spinner('Generating forecast...'):
+                            forecast, error = prophet_forecast(data, periods, economic_data)
                             
-                            fig = create_forecast_plot(data, forecast, "Prophet", symbol)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            with st.expander("View Detailed Forecast Data"):
-                                st.dataframe(forecast)
-                else:
-                    st.error(f"Could not load data for {symbol}. Please verify the symbol.")
-    
+                            if error:
+                                st.error(f"Forecasting error: {error}")
+                            elif forecast is not None:
+                                # Add technical indicators to the data
+                                data = add_technical_indicators(data, asset_type)
+                                
+                                display_metrics(data, forecast, asset_type, symbol)
+                                
+                                fig = create_forecast_plot(data, forecast, "Prophet", symbol)
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                with st.expander("View Detailed Forecast Data"):
+                                    st.dataframe(forecast)
+                    else:
+                        st.error(f"Could not load data for {symbol}. Please verify the symbol.")
+
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {str(e)}")
+                st.exception(e)
+            
+            finally:
+                display_footer()
+
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.exception(e)
-    
-    finally:
         display_footer()
 
 if __name__ == "__main__":
