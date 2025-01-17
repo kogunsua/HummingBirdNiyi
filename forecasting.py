@@ -629,3 +629,85 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     except Exception as e:
         logger.error(f"Error displaying economic indicators: {str(e)}")
         st.error(f"Error displaying economic indicators: {str(e)}")
+        
+        def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
+    """Create an interactive plot with historical data and forecast"""
+    try:
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
+                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
+
+        if isinstance(data.index, pd.DatetimeIndex):
+            historical_dates = data.index
+        else:
+            historical_dates = pd.to_datetime(data.index)
+
+        fig.add_trace(
+            go.Scatter(
+                x=historical_dates,
+                y=data['Close'],
+                name='Historical',
+                line=dict(color='blue')
+            ),
+            row=1, col=1
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=forecast['ds'],
+                y=forecast['yhat'],
+                name=f'{model_name} Forecast',
+                line=dict(color='red', dash='dash')
+            ),
+            row=1, col=1
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
+                y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
+                fill='toself',
+                fillcolor='rgba(0,100,255,0.2)',
+                line=dict(color='rgba(255,255,255,0)'),
+                name='Confidence Interval'
+            ),
+            row=1, col=1
+        )
+
+        daily_returns = data['Close'].pct_change()
+        volatility = daily_returns.rolling(window=30).std() * np.sqrt(252) * 100
+
+        fig.add_trace(
+            go.Scatter(
+                x=historical_dates,
+                y=volatility,
+                name='30-Day Volatility',
+                line=dict(color='orange')
+            ),
+            row=2, col=1
+        )
+
+        fig.update_layout(
+            title=f'{symbol} Price Forecast',
+            yaxis_title='Price ($)',
+            yaxis2_title='Volatility (%)',
+            height=800,
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+
+        fig.update_xaxes(title_text="Date", row=2, col=1)
+        fig.update_yaxes(title_text="Price ($)", row=1, col=1)
+        fig.update_yaxes(title_text="Volatility (%)", row=2, col=1)
+
+        return fig
+
+    except Exception as e:
+        logger.error(f"Error creating forecast plot: {str(e)}")
+        return None
+        
