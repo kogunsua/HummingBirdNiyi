@@ -1,7 +1,7 @@
 #appy.py
-   import streamlit as st
-   from config import Config, MODEL_DESCRIPTIONS
-   from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
+import streamlit as st from config
+import Config, MODEL_DESCRIPTIONS from data_fetchers
+import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
    from forecasting import (
        prophet_forecast,
        create_forecast_plot,
