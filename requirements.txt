@@ -1,18 +1,18 @@
 #requirements.txt
 streamlit
-   yfinance
-   pandas
-   requests
-   prophet
-   plotly
-   fredapi
-   numpy
-   typing
-   scikit-learn
-   scipy
-   holidays
-   cython
-   cmdstanpy
-   polygon-api-client
-   pycoingecko
-   statsmodels
+yfinance
+pandas
+requests
+prophet
+plotly
+fredapi
+numpy
+typing
+scikit-learn
+scipy
+holidays
+cython
+cmdstanpy
+polygon-api-client
+pycoingecko
+statsmodels
