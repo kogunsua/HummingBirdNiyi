@@ -237,11 +237,31 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
         if 'Close' not in data.columns:
             raise ValueError("Close price data not found in dataset")
             
-        # Calculate metrics
-        current_price = float(data['Close'].iloc[-1])
-        price_change_24h = float(data['Close'].pct_change().iloc[-1] * 100)
-        price_change_7d = float(data['Close'].pct_change(periods=7).iloc[-1] * 100)
-        volatility_30d = float(data['Close'].pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
+        # Ensure data is properly formatted
+        if isinstance(data['Close'], pd.Series):
+            close_data = data['Close']
+        else:
+            close_data = data['Close'].iloc[:, 0]  # Take first column if DataFrame
+            
+        # Calculate metrics safely
+        current_price = float(close_data.iloc[-1])
+        
+        # Calculate price changes
+        try:
+            price_change_24h = float(close_data.pct_change().iloc[-1] * 100)
+        except Exception:
+            price_change_24h = 0.0
+            
+        try:
+            price_change_7d = float(close_data.pct_change(periods=7).iloc[-1] * 100)
+        except Exception:
+            price_change_7d = 0.0
+            
+        # Calculate volatility
+        try:
+            volatility_30d = float(close_data.pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
+        except Exception:
+            volatility_30d = 0.0
         
         # Display metrics
         col1, col2, col3 = st.columns(3)
@@ -265,9 +285,17 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
                 f"{volatility_30d:.2f}%"
             )
 
+        # Log successful calculations
+        logger.info(f"Metrics calculated successfully: Price=${current_price:.2f}, 24h Change={price_change_24h:.2f}%, 7d Change={price_change_7d:.2f}%")
+
     except Exception as e:
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
+        
+        # Log the shape and types of data for debugging
+        logger.error(f"Data shape: {data.shape}")
+        logger.error(f"Close column type: {type(data['Close'])}")
+        logger.error(f"Close column info: {data['Close'].info()}")
 
 def display_confidence_analysis(forecast: pd.DataFrame):
     """Display confidence analysis of the forecast"""
