@@ -1,17 +1,4 @@
-"""
-Forecasting Module
------------------
-This module provides functionality for forecasting stock and cryptocurrency prices
-using Prophet and technical analysis.
-
-Sections:
-1. Imports and Configuration
-2. Data Preparation Functions
-3. Technical Analysis Functions
-4. Core Forecasting Functions
-5. Visualization Functions
-6. Metrics Display Functions
-"""
+#forcasting.py
 
 ###########################################
 # Section 1: Imports and Configuration
