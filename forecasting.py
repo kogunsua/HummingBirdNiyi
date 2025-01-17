@@ -243,7 +243,7 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
         else:
             close_data = data['Close'].iloc[:, 0]  # Take first column if DataFrame
             
-        # Calculate metrics safely
+        # Current price metrics
         current_price = float(close_data.iloc[-1])
         
         # Calculate price changes
@@ -262,10 +262,24 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
             volatility_30d = float(close_data.pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
         except Exception:
             volatility_30d = 0.0
+
+        # Get forecasted prices
+        try:
+            if forecast is not None:
+                next_day_forecast = float(forecast['yhat'].iloc[-1])
+                forecast_change = ((next_day_forecast / current_price) - 1) * 100
+            else:
+                next_day_forecast = current_price
+                forecast_change = 0.0
+        except Exception as e:
+            logger.error(f"Error calculating forecast metrics: {str(e)}")
+            next_day_forecast = current_price
+            forecast_change = 0.0
         
-        # Display metrics
+        # Display metrics in two rows
         col1, col2, col3 = st.columns(3)
         
+        # First row - Current metrics
         with col1:
             st.metric(
                 "Current Price",
@@ -285,12 +299,102 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
                 f"{volatility_30d:.2f}%"
             )
 
+        # Second row - Forecast metrics
+        st.subheader("🎯 Forecast Metrics")
+        fcol1, fcol2, fcol3 = st.columns(3)
+        
+        with fcol1:
+            st.metric(
+                "Forecasted Price",
+                f"${next_day_forecast:,.2f}",
+                f"{forecast_change:+.2f}%"
+            )
+        
+        with fcol2:
+            if forecast is not None:
+                upper_bound = float(forecast['yhat_upper'].iloc[-1])
+                st.metric("Upper Bound", f"${upper_bound:,.2f}")
+        
+        with fcol3:
+            if forecast is not None:
+                lower_bound = float(forecast['yhat_lower'].iloc[-1])
+                st.metric("Lower Bound", f"${lower_bound:,.2f}")
+
         # Log successful calculations
-        logger.info(f"Metrics calculated successfully: Price=${current_price:.2f}, 24h Change={price_change_24h:.2f}%, 7d Change={price_change_7d:.2f}%")
+        logger.info(f"Metrics calculated successfully: Current=${current_price:.2f}, Forecast=${next_day_forecast:.2f}")
 
     except Exception as e:
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
+        logger.error(f"Data shape: {data.shape}")
+        logger.error(f"Close column type: {type(data['Close'])}")
+
+def display_confidence_analysis(forecast: pd.DataFrame):
+    """Display confidence analysis of the forecast"""
+    try:
+        st.subheader("📊 Forecast Analysis")
+
+        if forecast is not None:
+            # Calculate confidence metrics
+            confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
+            avg_confidence = 100 - confidence_width.mean()
+            total_trend = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100
+            
+            # Calculate short-term and long-term predictions
+            short_term_change = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[-2]) - 1) * 100
+            long_term_trend = "Bullish" if total_trend > 0 else "Bearish"
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Forecast Confidence", f"{avg_confidence:.1f}%")
+            with col2:
+                st.metric("Short-term Change", f"{short_term_change:+.2f}%")
+            with col3:
+                st.metric("Long-term Trend", long_term_trend)
+
+    except Exception as e:
+        logger.error(f"Error displaying confidence analysis: {str(e)}")
+        st.error(f"Error displaying confidence analysis: {str(e)}")
+
+def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display cryptocurrency-specific metrics with forecast integration"""
+    try:
+        st.subheader("🪙 Cryptocurrency Metrics")
+
+        if 'Volume' in data.columns:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                volume = float(data['Volume'].iloc[-1])
+                volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
+                st.metric(
+                    "24h Volume",
+                    f"${volume:,.0f}",
+                    f"{volume_change:+.2f}%"
+                )
+
+            with col2:
+                if 'volume_ratio' in data.columns:
+                    vol_ratio = float(data['volume_ratio'].iloc[-1])
+                    st.metric(
+                        "Volume Ratio",
+                        f"{vol_ratio:.2f}",
+                        "Above Average" if vol_ratio > 1 else "Below Average"
+                    )
+            
+            with col3:
+                if forecast is not None:
+                    price_volatility = ((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) 
+                                     / forecast['yhat'].iloc[-1] * 100)
+                    st.metric(
+                        "Forecast Volatility",
+                        f"{price_volatility:.2f}%"
+                    )
+
+    except Exception as e:
+        logger.error(f"Error displaying crypto metrics: {str(e)}")
+        st.error(f"Error displaying crypto metrics: {str(e)}")
         
         # Log the shape and types of data for debugging
         logger.error(f"Data shape: {data.shape}")
