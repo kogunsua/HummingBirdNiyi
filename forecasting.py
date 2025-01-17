@@ -128,7 +128,7 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
 
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
                      indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Generate forecast using Prophet model"""
+    """Generate forecast using Prophet model with proper scaling for stocks"""
     try:
         if data is None or data.empty:
             return None, "No data provided for forecasting"
@@ -139,13 +139,30 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         if prophet_df is None or prophet_df.empty:
             return None, "No valid data for forecasting after preparation"
 
-        # Initialize Prophet with parameters
-        model = Prophet(
-            changepoint_prior_scale=0.05,
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False
-        )
+        # Calculate scaling factor based on the price range
+        max_price = prophet_df['y'].max()
+        scale_factor = 1.0
+        if asset_type.lower() == 'stocks':
+            # Using log transformation for stock prices to dampen extreme forecasts
+            prophet_df['y'] = np.log(prophet_df['y'])
+            
+        # Initialize Prophet with appropriate parameters based on asset type
+        if asset_type.lower() == 'stocks':
+            model = Prophet(
+                changepoint_prior_scale=0.01,  # Reduced to make forecast more conservative
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=False,
+                changepoint_range=0.8,  # Reduced from default 0.9 to make forecast more stable
+                interval_width=0.95  # 95% confidence interval
+            )
+        else:
+            model = Prophet(
+                changepoint_prior_scale=0.05,
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=False
+            )
 
         # Add monthly seasonality
         model.add_seasonality(
@@ -154,12 +171,43 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             fourier_order=5
         )
 
-        # Fit model and make forecast
+        # Fit model
         model.fit(prophet_df)
+        
+        # Generate future dates
         future = model.make_future_dataframe(periods=periods)
+        
+        # Make forecast
         forecast = model.predict(future)
+        
+        # Transform back if using log scale for stocks
+        if asset_type.lower() == 'stocks':
+            forecast['yhat'] = np.exp(forecast['yhat'])
+            forecast['yhat_lower'] = np.exp(forecast['yhat_lower'])
+            forecast['yhat_upper'] = np.exp(forecast['yhat_upper'])
+            
+            # Apply reasonable bounds to avoid extreme values
+            current_price = prophet_df['y'].iloc[-1]
+            if asset_type.lower() == 'stocks':
+                current_price = np.exp(current_price)
+                
+            # Limit maximum forecast to 2x current price for stocks
+            max_forecast = current_price * 2
+            forecast['yhat'] = forecast['yhat'].clip(upper=max_forecast)
+            forecast['yhat_upper'] = forecast['yhat_upper'].clip(upper=max_forecast * 1.2)
+            
+            # Limit minimum forecast to 0.5x current price for stocks
+            min_forecast = current_price * 0.5
+            forecast['yhat'] = forecast['yhat'].clip(lower=min_forecast)
+            forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_forecast * 0.8)
+
+        # Add actual values
         forecast['actual'] = np.nan
-        forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
+        if asset_type.lower() == 'stocks':
+            actual_values = np.exp(prophet_df['y'].values)
+        else:
+            actual_values = prophet_df['y'].values
+        forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = actual_values
 
         return forecast, None
 
@@ -167,69 +215,8 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
         logger.error(f"Error in prophet_forecast: {str(e)}")
         return None, str(e)
 
-def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
-    """Create an interactive plot with historical data and forecast"""
-    try:
-        # Create figure
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
-                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
-
-        # Add historical data
-        if isinstance(data.index, pd.DatetimeIndex):
-            historical_dates = data.index
-        else:
-            historical_dates = pd.to_datetime(data.index)
-            
-        fig.add_trace(
-            go.Scatter(
-                x=historical_dates,
-                y=data['Close'],
-                name='Historical',
-                line=dict(color='blue')
-            ),
-            row=1, col=1
-        )
-
-        # Add forecast line
-        fig.add_trace(
-            go.Scatter(
-                x=forecast['ds'],
-                y=forecast['yhat'],
-                name=f'{model_name} Forecast',
-                line=dict(color='red', dash='dash')
-            ),
-            row=1, col=1
-        )
-
-        # Add confidence intervals
-        fig.add_trace(
-            go.Scatter(
-                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
-                y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
-                fill='toself',
-                fillcolor='rgba(0,100,255,0.2)',
-                line=dict(color='rgba(255,255,255,0)'),
-                name='Confidence Interval'
-            ),
-            row=1, col=1
-        )
-
-        # Update layout
-        fig.update_layout(
-            title=f'{symbol} Price Forecast',
-            yaxis_title='Price ($)',
-            height=800
-        )
-
-        return fig
-
-    except Exception as e:
-        logger.error(f"Error creating forecast plot: {str(e)}")
-        return None
-
-def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
-    """Display common metrics for both stocks and cryptocurrencies"""
+def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str = 'stocks'):
+    """Display common metrics with proper scaling for stocks and cryptocurrencies"""
     try:
         st.subheader("📈 Price Metrics")
         
@@ -263,11 +250,23 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
         except Exception:
             volatility_30d = 0.0
 
-        # Get forecasted prices
+        # Get forecasted prices with bounds
         try:
             if forecast is not None:
                 next_day_forecast = float(forecast['yhat'].iloc[-1])
+                
+                # Apply reasonable bounds for stocks
+                if asset_type.lower() == 'stocks':
+                    # Limit the forecast to a reasonable range
+                    max_forecast = current_price * 2  # Maximum 100% increase
+                    min_forecast = current_price * 0.5  # Maximum 50% decrease
+                    next_day_forecast = np.clip(next_day_forecast, min_forecast, max_forecast)
+                
                 forecast_change = ((next_day_forecast / current_price) - 1) * 100
+                
+                # Clip the forecast change to reasonable bounds
+                if asset_type.lower() == 'stocks':
+                    forecast_change = np.clip(forecast_change, -50, 100)
             else:
                 next_day_forecast = current_price
                 forecast_change = 0.0
@@ -312,15 +311,16 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
         
         with fcol2:
             if forecast is not None:
-                upper_bound = float(forecast['yhat_upper'].iloc[-1])
+                upper_bound = min(float(forecast['yhat_upper'].iloc[-1]), 
+                                current_price * (2 if asset_type.lower() == 'stocks' else 10))
                 st.metric("Upper Bound", f"${upper_bound:,.2f}")
         
         with fcol3:
             if forecast is not None:
-                lower_bound = float(forecast['yhat_lower'].iloc[-1])
+                lower_bound = max(float(forecast['yhat_lower'].iloc[-1]), 
+                                current_price * (0.5 if asset_type.lower() == 'stocks' else 0.1))
                 st.metric("Lower Bound", f"${lower_bound:,.2f}")
 
-        # Log successful calculations
         logger.info(f"Metrics calculated successfully: Current=${current_price:.2f}, Forecast=${next_day_forecast:.2f}")
 
     except Exception as e:
