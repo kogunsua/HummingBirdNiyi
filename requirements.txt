@@ -1,72 +1,18 @@
-# requirement.txt
-streamline
-yfinance
-pandas
-requests
-prophet
-plotly
-fredapi
-numpy
-typing
-scikit-learn
-scipy
-holidays
-cython
-cmdstanpy
-pip
-polygon
-polygon-api-client
-pycoingecko
-statsmodels
-matplotlib
-tensorflow
-arch
-lightgbm
-xgboost
-fredapi
-alpha_vantage
-quandl
-wbdata
-ta
-xgboost 
+#requirements.txt
 streamlit
-pystan
-python-dateutil
-quandl
-census
-python-dotenv
-gdelt
-streamlit
-yfinance
-pandas
-requests
-prophet
-plotly
-fredapi
-numpy
-typing
-scikit-learn
-scipy
-holidays
-cython
-cmdstanpy
-polygon-api-client
-pycoingecko
-statsmodels
-matplotlib
-tensorflow
-arch
-lightgbm
-xgboost
-alpha_vantage
-quandl
-wbdata
-ta
-python-dateutil
-census
-python-dotenv
-gdelt
-requests-cache
-textblob
-vaderSentiment
-nltk
+   yfinance
+   pandas
+   requests
+   prophet
+   plotly
+   fredapi
+   numpy
+   typing
+   scikit-learn
+   scipy
+   holidays
+   cython
+   cmdstanpy
+   polygon-api-client
+   pycoingecko
+   statsmodels
