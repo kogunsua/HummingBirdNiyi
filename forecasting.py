@@ -1,5 +1,4 @@
 #forcasting.py
-
 ###########################################
 # Section 1: Imports and Configuration
 ###########################################
@@ -29,17 +28,14 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         logger.info(f"Input data shape: {data.shape}")
         logger.info(f"Input data columns: {data.columns.tolist()}")
 
-        # Make a copy of the data
         df = data.copy()
 
-        # If the DataFrame has a DatetimeIndex, reset it to a column
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
             df.rename(columns={'index': 'ds'}, inplace=True)
 
-        # If 'Close' column exists, use it as 'y'
         if 'Close' in df.columns:
-            if 'ds' not in df.columns:
+            if 'ds' not in df.columns:  
                 date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
                 if date_cols:
                     df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
@@ -48,22 +44,16 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
 
             df['y'] = df['Close']
         else:
-            # If no 'Close' column, use the first numeric column as 'y'
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 if 'ds' not in df.columns:
                     df['ds'] = df.index
                 df['y'] = df[numeric_cols[0]]
 
-        # Ensure 'ds' is datetime
         df['ds'] = pd.to_datetime(df['ds'])
-
-        # Ensure 'y' is float
         df['y'] = df['y'].astype(float)
 
-        # Select only required columns and sort by date
         prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
-        # Drop NaN values
         prophet_df = prophet_df.dropna()
 
         logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
@@ -74,7 +64,6 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
-
 
 ###########################################
 # Section 3: Technical Analysis Functions
@@ -94,7 +83,6 @@ def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"Error adding crypto indicators: {str(e)}")
         return df
-
 
 def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
     """Add technical indicators based on asset type"""
@@ -120,7 +108,6 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
     except Exception as e:
         logger.error(f"Error in add_technical_indicators: {str(e)}")
         return df
-
 
 ###########################################
 # Section 4: Core Forecasting Functions
@@ -191,7 +178,6 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
     except Exception as e:
         logger.error(f"Error in prophet_forecast: {str(e)}")
         return None, str(e)
-
 
 ###########################################
 # Section 5: Visualization Functions
@@ -278,12 +264,9 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         logger.error(f"Error creating forecast plot: {str(e)}")
         return None
 
-
 ###########################################
 # Section 6: Metrics Display Functions
 ###########################################
-
-# Metrics Display Functions - Common
 
 def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str = 'stocks'):
     """Display common metrics with proper scaling for stocks and cryptocurrencies"""
@@ -353,7 +336,6 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_typ
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
 
-
 def display_confidence_analysis(forecast: pd.DataFrame, asset_type: str = 'stocks'):
     """Display confidence analysis of the forecast with proper scaling"""
     try:
@@ -418,9 +400,6 @@ def display_confidence_analysis(forecast: pd.DataFrame, asset_type: str = 'stock
         logger.error(f"Error displaying confidence analysis: {str(e)}")
         st.error(f"Error displaying confidence analysis: {str(e)}")
 
-
-# Metrics Display Functions - Asset Specific
-
 def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
     """Display stock-specific metrics"""
     try:
@@ -428,4 +407,144 @@ def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: st
 
         try:
             beta = None
-            if 'Market
+            if 'Market' in data.columns:
+                beta = data['Close'].pct_change().cov(data['Market'].pct_change()) / data['Market'].pct_change().var()
+
+            ma50 = data['Close'].rolling(window=50).mean().iloc[-1]
+            ma200 = data['Close'].rolling(window=200).mean().iloc[-1
+            
+            def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display stock-specific metrics"""
+    try:
+        st.subheader("📊 Stock-Specific Metrics")
+
+        try:
+            beta = None
+            if 'Market' in data.columns:
+                beta = data['Close'].pct_change().cov(data['Market'].pct_change()) / data['Market'].pct_change().var()
+
+            ma50 = data['Close'].rolling(window=50).mean().iloc[-1]
+            ma200 = data['Close'].rolling(window=200).mean().iloc[-1]
+            avg_volume = data['Volume'].mean() if 'Volume' in data.columns else None
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if beta is not None:
+                    st.metric("Beta", f"{beta:.2f}",
+                             help="Stock's volatility compared to the market")
+            with col2:
+                st.metric("MA50 vs MA200", "Above" if ma50 > ma200 else "Below",
+                         help="50-day MA compared to 200-day MA")
+            with col3:
+                if avg_volume is not None:
+                    st.metric("Avg Daily Volume", f"{avg_volume:,.0f}",
+                             help="Average daily trading volume")
+                    
+        except Exception as e:
+            logger.error(f"Error calculating stock metrics: {str(e)}")
+            st.warning("Some stock-specific metrics could not be calculated")
+
+    except Exception as e:
+        logger.error(f"Error displaying stock metrics: {str(e)}")
+        st.error(f"Error displaying stock metrics: {str(e)}")
+
+
+def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display cryptocurrency-specific metrics"""
+    try:
+        st.subheader("🪙 Cryptocurrency Metrics")
+
+        if 'Volume' in data.columns:
+            col1, col2, col3 = st.columns(3)
+            
+            try:
+                volume = float(data['Volume'].iloc[-1])
+                volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
+                
+                with col1:
+                    st.metric("24h Volume", f"${volume:,.0f}", f"{volume_change:+.2f}%")
+                if 'volume_ratio' in data.columns:
+                    with col2:
+                        vol_ratio = float(data['volume_ratio'].iloc[-1])
+                        st.metric("Volume Ratio", f"{vol_ratio:.2f}",
+                                 "Above Average" if vol_ratio > 1 else "Below Average")
+                if forecast is not None:
+                    with col3:
+                        price_volatility = ((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) 
+                                         / forecast['yhat'].iloc[-1] * 100)
+                        st.metric("Forecast Volatility", f"{price_volatility:.2f}%")
+            except Exception as e:
+                logger.error(f"Error calculating crypto metrics: {str(e)}")
+                st.warning("Some cryptocurrency metrics could not be calculated")
+
+    except Exception as e:
+        logger.error(f"Error displaying crypto metrics: {str(e)}")
+        st.error(f"Error displaying crypto metrics: {str(e)}")
+
+
+def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
+    """Display all metrics with asset-specific handling"""
+    try:
+        # Validate inputs
+        if data is None or data.empty:
+            raise ValueError("No data provided for metrics display")
+            
+        if 'Close' not in data.columns:
+            raise ValueError("Close price data not found in dataset")
+            
+        # Display metrics with proper asset type
+        display_common_metrics(data, forecast, asset_type)
+        
+        # Display asset-specific metrics
+        if asset_type.lower() == 'crypto':
+            display_crypto_metrics(data, forecast, symbol)
+        else:
+            display_stock_metrics(data, forecast, symbol)
+            
+        # Display confidence analysis
+        if forecast is not None and not forecast.empty:
+            display_confidence_analysis(forecast, asset_type)
+        else:
+            st.warning("No forecast data available for confidence analysis")
+
+    except Exception as e:
+        logger.error(f"Error displaying metrics: {str(e)}")
+        st.error(f"Error displaying metrics: {str(e)}")
+
+
+def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
+    """Display economic indicator information and analysis"""
+    try:
+        st.subheader("📊 Economic Indicator Analysis")
+        
+        indicator_info = economic_indicators.get_indicator_info(indicator)
+        
+        st.markdown(f"""
+            **Indicator:** {indicator_info.get('description', indicator)}  
+            **Frequency:** {indicator_info.get('frequency', 'N/A')}  
+            **Units:** {indicator_info.get('units', 'N/A')}
+        """)
+
+    except Exception as e:
+        logger.error(f"Error displaying economic indicators: {str(e)}")
+        st.error(f"Error displaying economic indicators: {str(e)}")
+
+
+# Export all functions
+__all__ = [
+    'prepare_data_for_prophet',
+    'add_crypto_specific_indicators',
+    'add_technical_indicators',
+    'prophet_forecast',
+    'create_forecast_plot',
+    'display_common_metrics',
+    'display_confidence_analysis',
+    'display_stock_metrics',
+    'display_crypto_metrics',
+    'display_metrics',
+    'display_economic_indicators'
+]
+
+# Version information
+__version__ = '1.0.0'
