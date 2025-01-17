@@ -1,4 +1,5 @@
-#forecasting.py
+# forecasting.py - Section 1: Imports and Configuration
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -58,7 +59,6 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         prophet_df = prophet_df.dropna()
 
         logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
-        logger.info(f"Prophet DataFrame columns: {prophet_df.columns.tolist()}")
         logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
 
         return prophet_df
@@ -66,8 +66,8 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
-
-def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
+        
+        def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Add cryptocurrency-specific indicators"""
     try:
         # Market Volume Analysis
@@ -125,8 +125,8 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
     except Exception as e:
         logger.error(f"Error in add_technical_indicators: {str(e)}")
         return df
-
-def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
+        
+        def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
                      indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """Generate forecast using Prophet model with proper scaling for stocks"""
     try:
@@ -141,7 +141,6 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
 
         # Calculate scaling factor based on the price range
         max_price = prophet_df['y'].max()
-        scale_factor = 1.0
         if asset_type.lower() == 'stocks':
             # Using log transformation for stock prices to dampen extreme forecasts
             prophet_df['y'] = np.log(prophet_df['y'])
@@ -171,13 +170,9 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             fourier_order=5
         )
 
-        # Fit model
+        # Fit model and make forecast
         model.fit(prophet_df)
-        
-        # Generate future dates
         future = model.make_future_dataframe(periods=periods)
-        
-        # Make forecast
         forecast = model.predict(future)
         
         # Transform back if using log scale for stocks
@@ -186,19 +181,14 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
             forecast['yhat_lower'] = np.exp(forecast['yhat_lower'])
             forecast['yhat_upper'] = np.exp(forecast['yhat_upper'])
             
-            # Apply reasonable bounds to avoid extreme values
-            current_price = prophet_df['y'].iloc[-1]
-            if asset_type.lower() == 'stocks':
-                current_price = np.exp(current_price)
-                
-            # Limit maximum forecast to 2x current price for stocks
+            # Apply reasonable bounds
+            current_price = np.exp(prophet_df['y'].iloc[-1])
             max_forecast = current_price * 2
-            forecast['yhat'] = forecast['yhat'].clip(upper=max_forecast)
-            forecast['yhat_upper'] = forecast['yhat_upper'].clip(upper=max_forecast * 1.2)
-            
-            # Limit minimum forecast to 0.5x current price for stocks
             min_forecast = current_price * 0.5
-            forecast['yhat'] = forecast['yhat'].clip(lower=min_forecast)
+            
+            # Apply bounds to forecasts
+            forecast['yhat'] = forecast['yhat'].clip(lower=min_forecast, upper=max_forecast)
+            forecast['yhat_upper'] = forecast['yhat_upper'].clip(upper=max_forecast * 1.2)
             forecast['yhat_lower'] = forecast['yhat_lower'].clip(lower=min_forecast * 0.8)
 
         # Add actual values
@@ -214,57 +204,127 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
     except Exception as e:
         logger.error(f"Error in prophet_forecast: {str(e)}")
         return None, str(e)
+        
+        def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
+    """Create an interactive plot with historical data and forecast"""
+    try:
+        # Create figure
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
+                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
 
-def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str = 'stocks'):
+        # Add historical data
+        if isinstance(data.index, pd.DatetimeIndex):
+            historical_dates = data.index
+        else:
+            historical_dates = pd.to_datetime(data.index)
+            
+        fig.add_trace(
+            go.Scatter(
+                x=historical_dates,
+                y=data['Close'],
+                name='Historical',
+                line=dict(color='blue')
+            ),
+            row=1, col=1
+        )
+
+        # Add forecast line
+        fig.add_trace(
+            go.Scatter(
+                x=forecast['ds'],
+                y=forecast['yhat'],
+                name=f'{model_name} Forecast',
+                line=dict(color='red', dash='dash')
+            ),
+            row=1, col=1
+        )
+
+        # Add confidence intervals
+        fig.add_trace(
+            go.Scatter(
+                x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
+                y=pd.concat([forecast['yhat_upper'], forecast['yhat_lower'][::-1]]),
+                fill='toself',
+                fillcolor='rgba(0,100,255,0.2)',
+                line=dict(color='rgba(255,255,255,0)'),
+                name='Confidence Interval'
+            ),
+            row=1, col=1
+        )
+
+        # Calculate daily returns for volatility plot
+        daily_returns = data['Close'].pct_change()
+        volatility = daily_returns.rolling(window=30).std() * np.sqrt(252) * 100
+
+        # Add volatility plot
+        fig.add_trace(
+            go.Scatter(
+                x=historical_dates,
+                y=volatility,
+                name='30-Day Volatility',
+                line=dict(color='orange')
+            ),
+            row=2, col=1
+        )
+
+        # Update layout
+        fig.update_layout(
+            title=f'{symbol} Price Forecast',
+            yaxis_title='Price ($)',
+            yaxis2_title='Volatility (%)',
+            height=800,
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01
+            )
+        )
+
+        # Update axes
+        fig.update_xaxes(title_text="Date", row=2, col=1)
+        fig.update_yaxes(title_text="Price ($)", row=1, col=1)
+        fig.update_yaxes(title_text="Volatility (%)", row=2, col=1)
+
+        return fig
+
+    except Exception as e:
+        logger.error(f"Error creating forecast plot: {str(e)}")
+        return None
+        
+        def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str = 'stocks'):
     """Display common metrics with proper scaling for stocks and cryptocurrencies"""
     try:
         st.subheader("📈 Price Metrics")
         
-        # Ensure we have the required data
         if 'Close' not in data.columns:
             raise ValueError("Close price data not found in dataset")
             
         # Ensure data is properly formatted
-        if isinstance(data['Close'], pd.Series):
-            close_data = data['Close']
-        else:
-            close_data = data['Close'].iloc[:, 0]  # Take first column if DataFrame
+        close_data = data['Close'] if isinstance(data['Close'], pd.Series) else data['Close'].iloc[:, 0]
             
-        # Current price metrics
-        current_price = float(close_data.iloc[-1])
-        
-        # Calculate price changes
+        # Calculate metrics with proper error handling
         try:
+            current_price = float(close_data.iloc[-1])
             price_change_24h = float(close_data.pct_change().iloc[-1] * 100)
-        except Exception:
-            price_change_24h = 0.0
-            
-        try:
             price_change_7d = float(close_data.pct_change(periods=7).iloc[-1] * 100)
-        except Exception:
-            price_change_7d = 0.0
-            
-        # Calculate volatility
-        try:
             volatility_30d = float(close_data.pct_change().rolling(window=30).std() * np.sqrt(252) * 100)
         except Exception:
-            volatility_30d = 0.0
+            current_price = float(close_data.iloc[-1])
+            price_change_24h = price_change_7d = volatility_30d = 0.0
 
-        # Get forecasted prices with bounds
+        # Get forecasted prices with proper bounds
         try:
             if forecast is not None:
                 next_day_forecast = float(forecast['yhat'].iloc[-1])
-                
-                # Apply reasonable bounds for stocks
                 if asset_type.lower() == 'stocks':
-                    # Limit the forecast to a reasonable range
-                    max_forecast = current_price * 2  # Maximum 100% increase
-                    min_forecast = current_price * 0.5  # Maximum 50% decrease
+                    max_forecast = current_price * 2
+                    min_forecast = current_price * 0.5
                     next_day_forecast = np.clip(next_day_forecast, min_forecast, max_forecast)
                 
                 forecast_change = ((next_day_forecast / current_price) - 1) * 100
-                
-                # Clip the forecast change to reasonable bounds
                 if asset_type.lower() == 'stocks':
                     forecast_change = np.clip(forecast_change, -50, 100)
             else:
@@ -274,40 +334,22 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_typ
             logger.error(f"Error calculating forecast metrics: {str(e)}")
             next_day_forecast = current_price
             forecast_change = 0.0
-        
-        # Display metrics in two rows
-        col1, col2, col3 = st.columns(3)
-        
-        # First row - Current metrics
-        with col1:
-            st.metric(
-                "Current Price",
-                f"${current_price:,.2f}",
-                f"{price_change_24h:+.2f}%"
-            )
-        
-        with col2:
-            st.metric(
-                "7-Day Change",
-                f"{price_change_7d:+.2f}%"
-            )
-        
-        with col3:
-            st.metric(
-                "30-Day Volatility",
-                f"{volatility_30d:.2f}%"
-            )
 
-        # Second row - Forecast metrics
+        # Display current metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Current Price", f"${current_price:,.2f}", f"{price_change_24h:+.2f}%")
+        with col2:
+            st.metric("7-Day Change", f"{price_change_7d:+.2f}%")
+        with col3:
+            st.metric("30-Day Volatility", f"{volatility_30d:.2f}%")
+
+        # Display forecast metrics
         st.subheader("🎯 Forecast Metrics")
         fcol1, fcol2, fcol3 = st.columns(3)
         
         with fcol1:
-            st.metric(
-                "Forecasted Price",
-                f"${next_day_forecast:,.2f}",
-                f"{forecast_change:+.2f}%"
-            )
+            st.metric("Forecasted Price", f"${next_day_forecast:,.2f}", f"{forecast_change:+.2f}%")
         
         with fcol2:
             if forecast is not None:
@@ -321,13 +363,9 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_typ
                                 current_price * (0.5 if asset_type.lower() == 'stocks' else 0.1))
                 st.metric("Lower Bound", f"${lower_bound:,.2f}")
 
-        logger.info(f"Metrics calculated successfully: Current=${current_price:.2f}, Forecast=${next_day_forecast:.2f}")
-
     except Exception as e:
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
-        logger.error(f"Data shape: {data.shape}")
-        logger.error(f"Close column type: {type(data['Close'])}")
 
 def display_confidence_analysis(forecast: pd.DataFrame, asset_type: str = 'stocks'):
     """Display confidence analysis of the forecast with proper scaling"""
@@ -335,124 +373,68 @@ def display_confidence_analysis(forecast: pd.DataFrame, asset_type: str = 'stock
         st.subheader("📊 Forecast Analysis")
 
         if forecast is not None:
-            # Get the most recent actual value for scaling
             recent_actual = forecast[forecast['actual'].notna()]['actual'].iloc[-1]
             
-            # Calculate confidence metrics with scaling consideration
+            # Calculate confidence metrics
             confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
-            
-            # Adjust confidence width based on asset type
             if asset_type.lower() == 'stocks':
-                # Limit confidence width for stocks
-                confidence_width = confidence_width.clip(upper=100)  # Max 100% width
+                confidence_width = confidence_width.clip(upper=100)
                 
-            avg_confidence = 100 - min(confidence_width.mean(), 90)  # Ensure minimum 10% uncertainty
+            avg_confidence = 100 - min(confidence_width.mean(), 90)
             
-            # Calculate trends with proper scaling
+            # Calculate trends
             if asset_type.lower() == 'stocks':
-                # For stocks, limit the trend to reasonable bounds
                 total_trend = min(((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100, 100)
                 short_term_change = min(((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[-2]) - 1) * 100, 50)
             else:
-                # For crypto, allow wider ranges
                 total_trend = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100
                 short_term_change = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[-2]) - 1) * 100
             
             # Determine trend strength
             trend_strength = abs(total_trend)
-            if trend_strength < 10:
-                trend_description = "Neutral"
-            else:
-                trend_description = "Strong " + ("Bullish" if total_trend > 0 else "Bearish")
+            trend_description = "Neutral" if trend_strength < 10 else f"Strong {'Bullish' if total_trend > 0 else 'Bearish'}"
             
             # Display metrics
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric(
-                    "Forecast Confidence",
-                    f"{avg_confidence:.1f}%",
-                    help="Higher values indicate more confident predictions"
-                )
-            
+                st.metric("Forecast Confidence", f"{avg_confidence:.1f}%",
+                         help="Higher values indicate more confident predictions")
             with col2:
-                st.metric(
-                    "Short-term Change",
-                    f"{short_term_change:+.2f}%",
-                    help="Expected price change in the next period"
-                )
-            
+                st.metric("Short-term Change", f"{short_term_change:+.2f}%",
+                         help="Expected price change in the next period")
             with col3:
-                st.metric(
-                    "Trend Strength",
-                    trend_description,
-                    help="Overall trend direction and strength"
-                )
-            
+                st.metric("Trend Strength", trend_description,
+                         help="Overall trend direction and strength")
             with col4:
-                volatility = confidence_width.mean()
-                st.metric(
-                    "Forecast Volatility",
-                    f"{volatility:.2f}%",
-                    help="Expected price volatility"
-                )
+                st.metric("Forecast Volatility", f"{confidence_width.mean():.2f}%",
+                         help="Expected price volatility")
 
-            # Additional Analysis
-            st.subheader("📈 Detailed Forecast Analysis")
-            
-            # Calculate support and resistance levels
+            # Calculate and display support/resistance
             support_level = max(forecast['yhat_lower'].iloc[-1], 
                               recent_actual * (0.5 if asset_type.lower() == 'stocks' else 0.1))
             resistance_level = min(forecast['yhat_upper'].iloc[-1], 
                                  recent_actual * (2 if asset_type.lower() == 'stocks' else 10))
             
-            # Display support and resistance
             col1, col2 = st.columns(2)
             with col1:
-                st.metric(
-                    "Support Level",
-                    f"${support_level:,.2f}",
-                    help="Predicted price floor"
-                )
+                st.metric("Support Level", f"${support_level:,.2f}",
+                         help="Predicted price floor")
             with col2:
-                st.metric(
-                    "Resistance Level",
-                    f"${resistance_level:,.2f}",
-                    help="Predicted price ceiling"
-                )
+                st.metric("Resistance Level", f"${resistance_level:,.2f}",
+                         help="Predicted price ceiling")
 
-            # Add trend analysis text
             st.markdown(f"""
             ### Trend Analysis Summary
             - **Overall Trend:** The asset is showing a {trend_description.lower()} trend with a {abs(total_trend):.1f}% total expected move
             - **Confidence Level:** The model's predictions show {avg_confidence:.1f}% confidence
-            - **Volatility Expectation:** Expected price volatility of {volatility:.2f}%
+            - **Volatility Expectation:** Expected price volatility of {confidence_width.mean():.2f}%
             - **Price Range:** The price is expected to stay between ${support_level:,.2f} and ${resistance_level:,.2f}
             """)
 
     except Exception as e:
         logger.error(f"Error displaying confidence analysis: {str(e)}")
         st.error(f"Error displaying confidence analysis: {str(e)}")
-
-def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display all metrics with asset-specific handling"""
-    try:
-        # Display common metrics with asset type consideration
-        display_common_metrics(data, forecast, asset_type)
-        
-        # Display asset-specific metrics
-        if asset_type.lower() == 'crypto':
-            display_crypto_metrics(data, forecast, symbol)
-        else:
-            # Display stock-specific metrics
-            display_stock_metrics(data, forecast, symbol)
-            
-        # Display confidence analysis with asset type consideration
-        display_confidence_analysis(forecast, asset_type)
-
-    except Exception as e:
-        logger.error(f"Error displaying metrics: {str(e)}")
-        st.error(f"Error displaying metrics: {str(e)}")
 
 def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
     """Display stock-specific metrics"""
@@ -461,15 +443,12 @@ def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: st
         
         # Calculate stock-specific metrics
         try:
-            # Beta calculation (if market data available)
-            beta = data['Close'].pct_change().cov(data['Market'].pct_change()) / data['Market'].pct_change().var() \
-                  if 'Market' in data.columns else None
+            beta = None
+            if 'Market' in data.columns:
+                beta = data['Close'].pct_change().cov(data['Market'].pct_change()) / data['Market'].pct_change().var()
                   
-            # Moving averages
             ma50 = data['Close'].rolling(window=50).mean().iloc[-1]
             ma200 = data['Close'].rolling(window=200).mean().iloc[-1]
-            
-            # Average volume
             avg_volume = data['Volume'].mean() if 'Volume' in data.columns else None
             
             # Display metrics
@@ -477,26 +456,15 @@ def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: st
             
             with col1:
                 if beta is not None:
-                    st.metric(
-                        "Beta",
-                        f"{beta:.2f}",
-                        help="Stock's volatility compared to the market"
-                    )
-            
+                    st.metric("Beta", f"{beta:.2f}",
+                             help="Stock's volatility compared to the market")
             with col2:
-                st.metric(
-                    "MA50 vs MA200",
-                    "Above" if ma50 > ma200 else "Below",
-                    help="50-day MA compared to 200-day MA"
-                )
-            
+                st.metric("MA50 vs MA200", "Above" if ma50 > ma200 else "Below",
+                         help="50-day MA compared to 200-day MA")
             with col3:
                 if avg_volume is not None:
-                    st.metric(
-                        "Avg Daily Volume",
-                        f"{avg_volume:,.0f}",
-                        help="Average daily trading volume"
-                    )
+                    st.metric("Avg Daily Volume", f"{avg_volume:,.0f}",
+                             help="Average daily trading volume")
                     
         except Exception as e:
             logger.error(f"Error calculating stock metrics: {str(e)}")
@@ -514,99 +482,54 @@ def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: s
         if 'Volume' in data.columns:
             col1, col2, col3 = st.columns(3)
             
-            with col1:
+            try:
                 volume = float(data['Volume'].iloc[-1])
                 volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
-                st.metric(
-                    "24h Volume",
-                    f"${volume:,.0f}",
-                    f"{volume_change:+.2f}%"
-                )
-
-            with col2:
+                
+                with col1:
+                    st.metric("24h Volume", f"${volume:,.0f}", f"{volume_change:+.2f}%")
                 if 'volume_ratio' in data.columns:
-                    vol_ratio = float(data['volume_ratio'].iloc[-1])
-                    st.metric(
-                        "Volume Ratio",
-                        f"{vol_ratio:.2f}",
-                        "Above Average" if vol_ratio > 1 else "Below Average"
-                    )
-            
-            with col3:
+                    with col2:
+                        vol_ratio = float(data['volume_ratio'].iloc[-1])
+                        st.metric("Volume Ratio", f"{vol_ratio:.2f}",
+                                 "Above Average" if vol_ratio > 1 else "Below Average")
                 if forecast is not None:
-                    price_volatility = ((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) 
-                                     / forecast['yhat'].iloc[-1] * 100)
-                    st.metric(
-                        "Forecast Volatility",
-                        f"{price_volatility:.2f}%"
-                    )
-
-    except Exception as e:
-        logger.error(f"Error displaying crypto metrics: {str(e)}")
-        st.error(f"Error displaying crypto metrics: {str(e)}")
-        
-        # Log the shape and types of data for debugging
-        logger.error(f"Data shape: {data.shape}")
-        logger.error(f"Close column type: {type(data['Close'])}")
-        logger.error(f"Close column info: {data['Close'].info()}")
-
-def display_confidence_analysis(forecast: pd.DataFrame):
-    """Display confidence analysis of the forecast"""
-    try:
-        st.subheader("📊 Confidence Analysis")
-
-        # Calculate confidence metrics
-        confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
-        avg_confidence = 100 - confidence_width.mean()
-        total_trend = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100
-        
-        # Display metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Average Confidence", f"{avg_confidence:.1f}%")
-        with col2:
-            st.metric("Overall Trend", f"{total_trend:+.1f}%")
-
-    except Exception as e:
-        logger.error(f"Error displaying confidence analysis: {str(e)}")
-        st.error(f"Error displaying confidence analysis: {str(e)}")
-
-def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
-    """Display cryptocurrency-specific metrics"""
-    try:
-        st.subheader("🪙 Cryptocurrency Metrics")
-
-        if 'Volume' in data.columns:
-            col1, col2 = st.columns(2)
-            with col1:
-                volume = float(data['Volume'].iloc[-1])
-                volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
-                st.metric(
-                    "24h Volume",
-                    f"${volume:,.0f}",
-                    f"{volume_change:+.2f}%"
-                )
-
-            with col2:
-                if 'volume_ratio' in data.columns:
-                    vol_ratio = float(data['volume_ratio'].iloc[-1])
-                    st.metric(
-                        "Volume Ratio",
-                        f"{vol_ratio:.2f}",
-                        "Above Average" if vol_ratio > 1 else "Below Average"
-                    )
+                    with col3:
+                        price_volatility = ((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) 
+                                         / forecast['yhat'].iloc[-1] * 100)
+                        st.metric("Forecast Volatility", f"{price_volatility:.2f}%")
+            except Exception as e:
+                logger.error(f"Error calculating crypto metrics: {str(e)}")
+                st.warning("Some cryptocurrency metrics could not be calculated")
 
     except Exception as e:
         logger.error(f"Error displaying crypto metrics: {str(e)}")
         st.error(f"Error displaying crypto metrics: {str(e)}")
 
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display all metrics"""
+    """Display all metrics with asset-specific handling"""
     try:
-        display_common_metrics(data, forecast)
+        # Validate inputs
+        if data is None or data.empty:
+            raise ValueError("No data provided for metrics display")
+            
+        if 'Close' not in data.columns:
+            raise ValueError("Close price data not found in dataset")
+            
+        # Display metrics with proper asset type
+        display_common_metrics(data, forecast, asset_type)
+        
+        # Display asset-specific metrics
         if asset_type.lower() == 'crypto':
             display_crypto_metrics(data, forecast, symbol)
-        display_confidence_analysis(forecast)
+        else:
+            display_stock_metrics(data, forecast, symbol)
+            
+        # Display confidence analysis
+        if forecast is not None and not forecast.empty:
+            display_confidence_analysis(forecast, asset_type)
+        else:
+            st.warning("No forecast data available for confidence analysis")
 
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
