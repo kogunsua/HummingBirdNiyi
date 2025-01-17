@@ -3,20 +3,6 @@
 # Section 1: Imports and Configuration
 ###########################################
 
-# Export all functions
-__all__ = [
-    'prepare_data_for_prophet',
-    'add_crypto_specific_indicators',
-    'add_technical_indicators',
-    'prophet_forecast',
-    'create_forecast_plot',
-    'display_common_metrics',
-    'display_confidence_analysis',
-    'display_stock_metrics',
-    'display_crypto_metrics',
-    'display_metrics',
-    'display_economic_indicators'
-]
 
 import streamlit as st
 import pandas as pd
@@ -32,6 +18,20 @@ from asset_config import AssetConfig
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Export all functions
+__all__ = [
+    'prepare_data_for_prophet',
+    'add_crypto_specific_indicators',
+    'add_technical_indicators',
+    'prophet_forecast',
+    'create_forecast_plot',
+    'display_common_metrics',
+    'display_confidence_analysis',
+    'display_stock_metrics',
+    'display_crypto_metrics',
+    'display_metrics',
+    'display_economic_indicators'
+]
 ###########################################
 # Section 2: Data Preparation Functions
 ###########################################
