@@ -3,6 +3,21 @@
 # Section 1: Imports and Configuration
 ###########################################
 
+# Export all functions
+__all__ = [
+    'prepare_data_for_prophet',
+    'add_crypto_specific_indicators',
+    'add_technical_indicators',
+    'prophet_forecast',
+    'create_forecast_plot',
+    'display_common_metrics',
+    'display_confidence_analysis',
+    'display_stock_metrics',
+    'display_crypto_metrics',
+    'display_metrics',
+    'display_economic_indicators'
+]
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -529,22 +544,6 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
     except Exception as e:
         logger.error(f"Error displaying economic indicators: {str(e)}")
         st.error(f"Error displaying economic indicators: {str(e)}")
-
-
-# Export all functions
-__all__ = [
-    'prepare_data_for_prophet',
-    'add_crypto_specific_indicators',
-    'add_technical_indicators',
-    'prophet_forecast',
-    'create_forecast_plot',
-    'display_common_metrics',
-    'display_confidence_analysis',
-    'display_stock_metrics',
-    'display_crypto_metrics',
-    'display_metrics',
-    'display_economic_indicators'
-]
 
 # Version information
 __version__ = '1.0.0'
