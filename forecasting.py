@@ -23,50 +23,45 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str = 'stocks') -> 
         # Make a copy of the data
         df = data.copy()
 
-        if asset_type.lower() == 'stocks':
-            # Stock-specific preprocessing
-            if isinstance(df.index, pd.DatetimeIndex):
-                df = df.reset_index()
-                df.rename(columns={'index': 'ds'}, inplace=True)
-            elif 'Date' in df.columns:
-                df = df.rename(columns={'Date': 'ds'})
-            elif 'timestamp' in df.columns:
-                df = df.rename(columns={'timestamp': 'ds'})
+        # Standardize date column handling for both asset types
+        date_column = None
+        
+        # Check for DatetimeIndex
+        if isinstance(df.index, pd.DatetimeIndex):
+            df = df.reset_index()
+            date_column = df.columns[0]  # The reset index column
+        # Check common date column names
+        elif any(col in df.columns for col in ['Date', 'date', 'TIME', 'Time', 'time', 'timestamp', 'Timestamp']):
+            date_column = next(col for col in df.columns 
+                             if col in ['Date', 'date', 'TIME', 'Time', 'time', 'timestamp', 'Timestamp'])
             
-            # Ensure Close price is named 'y' for Prophet
-            df = df.rename(columns={'Close': 'y'})
+        # If no date column found, raise an error
+        if date_column is None:
+            raise ValueError("No date column found in the dataset")
             
-            # Ensure datetime is timezone naive
-            df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
-            
-            # Select only required columns
-            df = df[['ds', 'y']]
-        else:
-            # Existing crypto preprocessing logic
-            if isinstance(df.index, pd.DatetimeIndex):
-                df = df.reset_index()
-                df.rename(columns={'index': 'ds'}, inplace=True)
-
-            if 'Close' in df.columns:
-                if 'ds' not in df.columns:
-                    date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
-                    if date_cols:
-                        df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
-                    else:
-                        df['ds'] = df.index
-
-                df['y'] = df['Close']
+        # Rename the date column to 'ds'
+        df = df.rename(columns={date_column: 'ds'})
+        
+        # Handle the 'y' column (target variable)
+        if 'Close' in df.columns:
+            df['y'] = df['Close']
+        elif 'y' not in df.columns:
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                df['y'] = df[numeric_cols[0]]
             else:
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    if 'ds' not in df.columns:
-                        df['ds'] = df.index
-                    df['y'] = df[numeric_cols[0]]
+                raise ValueError("No numeric column found for target variable")
 
-        # Common preprocessing steps
-        df['ds'] = pd.to_datetime(df['ds'])
+        # Ensure datetime is timezone naive
+        df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
+        
+        # Convert target to float
         df['y'] = df['y'].astype(float)
+        
+        # Select and sort only required columns
         prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
+        
+        # Drop any rows with NaN values
         prophet_df = prophet_df.dropna()
 
         logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
