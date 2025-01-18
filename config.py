@@ -1,4 +1,5 @@
 # config.py
+import streamlit as st
 from datetime import date, timedelta
 
 class Config:
@@ -8,15 +9,26 @@ class Config:
     START = START_DATE.strftime("%Y-%m-%d")
     CACHE_TTL = 3600
     DEFAULT_TICKER = "MSFT"
-    DEFAULT_CRYPTO = "ripple"
+    DEFAULT_CRYPTO = "xrp"
     DEFAULT_PERIODS = 30
     ASSET_TYPES = ["Stocks", "Cryptocurrency"]
     
-    # API Keys
-    FRED_API_KEY = "a81e9c33d8dbac1cc1309e51527e0d53"
-    ALPHA_VANTAGE_API_KEY = "E3R1QOXBCPW9924S"
-    POLYGON_API_KEY = "9rP1CLlxuoRWPvkEiOMxxIwNyffjUEb4"
-    NEWS_API_KEY = "YOUR_NEWS_API_KEY"  # Add if using News API for sentiment
+    # API Keys from Streamlit secrets
+    @property
+    def FRED_API_KEY(self):
+        return st.secrets["api_keys"]["fred"]
+    
+    @property
+    def ALPHA_VANTAGE_API_KEY(self):
+        return st.secrets["api_keys"]["alpha_vantage"]
+    
+    @property
+    def POLYGON_API_KEY(self):
+        return st.secrets["api_keys"]["polygon"]
+    
+    @property
+    def NEWS_API_KEY(self):
+        return st.secrets["api_keys"]["news"]
     
     # Data Sources
     DATA_SOURCES = {
@@ -27,7 +39,7 @@ class Config:
         "Quandl": "Mortgage rate data, treasury yield data, and housing market trends",
         "U.S. Census Bureau API": "Datasets for housing permits, construction, and other indicators",
         "Alpha Vantage": "Macroeconomic data, including interest rates and financial market data",
-        "Political Data": "Political sentiment and market impact analysis"  # Added this source
+        "Political Data": "Political sentiment and market impact analysis"
     }
     
     # Economic Indicators
@@ -126,11 +138,11 @@ class Config:
         'update_frequency': 'Daily',
         'analysis_methods': ['NLP', 'Sentiment Analysis', 'Topic Modeling'],
         'impact_metrics': ['Market Correlation', 'Volatility Impact', 'Trend Analysis'],
-        'lookback_period': 365,  # Days of historical data to consider
-        'confidence_threshold': 0.6  # Minimum confidence score for sentiment analysis
+        'lookback_period': 365,
+        'confidence_threshold': 0.6
     }
 
-# Model descriptions
+# Model descriptions moved outside the Config class since they're static
 MODEL_DESCRIPTIONS = {
     "Prophet": {
         "description": """
@@ -145,7 +157,7 @@ MODEL_DESCRIPTIONS = {
             "Stock price forecasting",
             "Cryptocurrency price prediction",
             "Economic indicator analysis",
-            "Political sentiment integration"  # Added this use case
+            "Political sentiment integration"
         ],
         "limitations": [
             "May not capture sudden market shocks",
