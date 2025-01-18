@@ -11,6 +11,7 @@ import nltk
 from nltk.sentiment import SentimentIntensityAnalyzer
 from textblob import TextBlob
 import streamlit as st
+import plotly.graph_objects as go
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -220,3 +221,73 @@ class MultiSourceSentimentAnalyzer:
         except Exception as e:
             logger.error(f"Error processing combined sentiment: {str(e)}")
             raise
+
+def integrate_multi_source_sentiment(symbol: str, sentiment_period: int) -> Optional[pd.DataFrame]:
+    """Integrate multi-source sentiment analysis"""
+    try:
+        analyzer = MultiSourceSentimentAnalyzer()
+        
+        start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        
+        with st.spinner('Fetching sentiment data from multiple sources...'):
+            sentiment_data = analyzer.fetch_combined_sentiment(symbol, start_date, end_date)
+        
+        if sentiment_data is None or sentiment_data.empty:
+            st.warning("No sentiment data available from any source. Using price-only forecast.")
+            return None
+        
+        st.success("Successfully fetched sentiment data!")
+        
+        # Display sentiment analysis
+        st.markdown("### 📊 Multi-Source Market Sentiment Analysis")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            current_sentiment = sentiment_data['sentiment_score'].iloc[-1]
+            sentiment_change = sentiment_data['sentiment_score'].iloc[-1] - sentiment_data['sentiment_score'].iloc[-2]
+            st.metric(
+                "Current Sentiment",
+                f"{current_sentiment:.2f}",
+                f"{sentiment_change:+.2f}"
+            )
+        
+        with col2:
+            st.metric(
+                "Average Sentiment",
+                f"{sentiment_data['sentiment_score'].mean():.2f}"
+            )
+        
+        with col3:
+            st.metric(
+                "Confidence Level",
+                f"{sentiment_data['confidence'].mean():.2f}"
+            )
+        
+        # Create sentiment visualization
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=sentiment_data['ds'],
+                y=sentiment_data['sentiment_score'],
+                name='Sentiment Score',
+                line=dict(color='purple')
+            )
+        )
+        
+        fig.update_layout(
+            title="Market Sentiment Trend (Multi-Source)",
+            xaxis_title="Date",
+            yaxis_title="Sentiment Score",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        return sentiment_data
+
+    except Exception as e:
+        logger.error(f"Error in multi-source sentiment integration: {str(e)}")
+        st.error(f"Error in sentiment analysis: {str(e)}")
+        return None
