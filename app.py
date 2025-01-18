@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -15,7 +14,6 @@ from forecasting import (
 from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
 
 def display_footer():
-    """Display the application footer"""
     st.markdown("""
         <div style='text-align: center; padding: 10px;'>
             <p>© 2025 AvaResearch LLC. All rights reserved.</p>
@@ -30,7 +28,6 @@ def main():
             layout="wide"
         )
         
-        # Display branding
         st.markdown("""
             <div style='text-align: center;'>
                 <h1>🐦 HummingBird v2m</h1>
@@ -46,19 +43,22 @@ def main():
             list(MODEL_DESCRIPTIONS.keys())
         )
 
-        # Display model information
         if selected_model in MODEL_DESCRIPTIONS:
             model_info = MODEL_DESCRIPTIONS[selected_model]
             st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
             
             status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
-            st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
-                              unsafe_allow_html=True)
+            st.sidebar.markdown(
+                f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
+                unsafe_allow_html=True
+            )
             
             confidence = model_info['confidence_rating']
             color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
-            st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
-                              unsafe_allow_html=True)
+            st.sidebar.markdown(
+                f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
+                unsafe_allow_html=True
+            )
             
             st.sidebar.markdown("**Best Use Cases:**")
             for use_case in model_info['best_use_cases']:
@@ -68,7 +68,7 @@ def main():
             for limitation in model_info['limitations']:
                 st.sidebar.markdown(f"- {limitation}")
 
-        # Sidebar - Data Sources Information
+        # Sidebar - Data Sources
         st.sidebar.header("📊 Data Sources")
         for source, description in Config.DATA_SOURCES.items():
             st.sidebar.markdown(f"**{source}**: {description}")
@@ -115,7 +115,7 @@ def main():
         # Initialize GDELT analyzer
         gdelt_analyzer = GDELTAnalyzer()
         
-        # Generate Forecast
+        # Generate Forecast button
         if st.button("🚀 Generate Forecast"):
             try:
                 with st.spinner('Loading data...'):
@@ -132,7 +132,7 @@ def main():
                             display_economic_indicators(economic_data, selected_indicator, economic_indicators)
                     
                     # Get sentiment data and display sentiment analysis
-                    sentiment_data = integrate_sentiment_analysis(None)  # Pass None as we're not using app instance
+                    sentiment_data = integrate_sentiment_analysis(None)
                     
                     if price_data is not None:
                         if selected_model != "Prophet":
@@ -149,7 +149,6 @@ def main():
                                 # Display metrics and analysis
                                 display_metrics(price_data, forecast, asset_type, symbol)
                                 
-                                # Display sentiment impact if available
                                 if impact_metrics:
                                     st.subheader("🎭 Sentiment Impact Analysis")
                                     col1, col2, col3 = st.columns(3)
@@ -180,13 +179,15 @@ def main():
                                     st.dataframe(forecast)
                     else:
                         st.error(f"Could not load data for {symbol}. Please verify the symbol.")
-
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
                 st.exception(e)
-            
             finally:
                 display_footer()
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {str(e)}")
+        st.exception(e)
+        display_footer()
 
 if __name__ == "__main__":
     main()
