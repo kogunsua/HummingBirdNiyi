@@ -19,7 +19,7 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str = 'stocks') -> 
         logger.info("Starting data preparation for Prophet")
         logger.info(f"Input data shape: {data.shape}")
         logger.info(f"Input data columns: {data.columns.tolist()}")
-
+        
         # Make a copy of the data
         df = data.copy()
         
@@ -27,47 +27,52 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str = 'stocks') -> 
         if isinstance(df.columns, pd.MultiIndex):
             # Get the first level values where second level matches the symbol
             symbol = df.columns[0][1]  # Get the symbol from first column
-            # Create a new dataframe with single-level columns
             df = pd.DataFrame({
                 col[0]: df[col] for col in df.columns if col[1] == symbol
             })
             logger.info(f"Processed multi-index columns. New columns: {df.columns.tolist()}")
-
-        # Standardize date column handling
+        
+        # Handle the index
         if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            df.rename(columns={'index': 'ds'}, inplace=True)
-        elif 'Date' in df.columns:
-            df.rename(columns={'Date': 'ds'}, inplace=True)
-        elif any(col in df.columns for col in ['TIME', 'Time', 'time', 'timestamp', 'Timestamp']):
-            date_col = next(col for col in df.columns 
-                          if col in ['TIME', 'Time', 'time', 'timestamp', 'Timestamp'])
-            df.rename(columns={date_col: 'ds'}, inplace=True)
+            # Save index as ds column
+            df = df.copy()  # Create a new copy to avoid SettingWithCopyWarning
+            df['ds'] = df.index
+            prophet_df = df.reset_index(drop=True)
         else:
-            raise ValueError("No date column found in the dataset")
+            prophet_df = df.copy()
+            # Try to find date column if not in index
+            date_cols = [col for col in prophet_df.columns if col.lower() in 
+                        ['date', 'time', 'timestamp']]
+            if date_cols:
+                prophet_df['ds'] = prophet_df[date_cols[0]]
+            else:
+                raise ValueError("No date column found in dataset")
 
-        # Handle the target variable (y)
-        if 'Close' in df.columns:
-            df['y'] = df['Close']
+        # Ensure 'y' column exists
+        if 'Close' in prophet_df.columns:
+            prophet_df['y'] = prophet_df['Close']
         else:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            numeric_cols = prophet_df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
-                df['y'] = df[numeric_cols[0]]
+                prophet_df['y'] = prophet_df[numeric_cols[0]]
             else:
                 raise ValueError("No numeric column found for target variable")
 
-        # Ensure datetime is timezone naive and parsed correctly
-        df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
-        
+        # Ensure proper datetime format
+        prophet_df['ds'] = pd.to_datetime(prophet_df['ds'])
+        if prophet_df['ds'].dt.tz is not None:
+            prophet_df['ds'] = prophet_df['ds'].dt.tz_localize(None)
+
         # Convert target to float
-        df['y'] = df['y'].astype(float)
+        prophet_df['y'] = prophet_df['y'].astype(float)
+
+        # Select only required columns and sort
+        prophet_df = prophet_df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
         
-        # Select and sort only required columns
-        prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
-        
-        # Drop any rows with NaN values
+        # Drop any NaN values
         prophet_df = prophet_df.dropna()
 
+        # Log the prepared data
         logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
         logger.info(f"Prophet DataFrame columns: {prophet_df.columns.tolist()}")
         logger.info(f"Sample of prepared data:\n{prophet_df.head()}")
