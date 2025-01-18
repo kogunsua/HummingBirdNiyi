@@ -542,6 +542,64 @@ def display_confidence_analysis(forecast: pd.DataFrame):
         logger.error(f"Error displaying confidence analysis: {str(e)}")
         st.error(f"Error displaying confidence analysis: {str(e)}")
 
+def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display cryptocurrency-specific metrics"""
+    try:
+        st.subheader("🪙 Cryptocurrency Metrics")
+
+        # Crypto-specific metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if 'hourly_volatility' in data.columns:
+                volatility = float(data['hourly_volatility'].iloc[-1] * 100)
+                volatility_change = float(data['hourly_volatility'].pct_change().iloc[-1] * 100)
+                st.metric(
+                    "Hourly Volatility",
+                    f"{volatility:.2f}%",
+                    f"{volatility_change:+.2f}%"
+                )
+
+        with col2:
+            if 'volume_ratio' in data.columns:
+                volume_ratio = float(data['volume_ratio'].iloc[-1])
+                volume_ratio_change = float(data['volume_ratio'].pct_change().iloc[-1] * 100)
+                st.metric(
+                    "Volume Ratio",
+                    f"{volume_ratio:.2f}",
+                    f"{volume_ratio_change:+.2f}%"
+                )
+
+        with col3:
+            if 'market_dominance' in data.columns:
+                dominance = float(data['market_dominance'].iloc[-1] * 100)
+                st.metric(
+                    "Market Dominance",
+                    f"{dominance:.2f}%"
+                )
+
+        # Network metrics if available
+        if 'network_transactions' in data.columns and 'active_addresses' in data.columns:
+            ncol1, ncol2 = st.columns(2)
+            
+            with ncol1:
+                transactions = int(data['network_transactions'].iloc[-1])
+                st.metric(
+                    "Network Transactions",
+                    f"{transactions:,d}"
+                )
+            
+            with ncol2:
+                addresses = int(data['active_addresses'].iloc[-1])
+                st.metric(
+                    "Active Addresses",
+                    f"{addresses:,d}"
+                )
+
+    except Exception as e:
+        logger.error(f"Error displaying crypto metrics: {str(e)}")
+        st.error(f"Error displaying crypto metrics: {str(e)}")
+        
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
     """Display all metrics based on asset type"""
     try:
