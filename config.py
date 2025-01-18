@@ -16,6 +16,7 @@ class Config:
     FRED_API_KEY = "a81e9c33d8dbac1cc1309e51527e0d53"
     ALPHA_VANTAGE_API_KEY = "E3R1QOXBCPW9924S"
     POLYGON_API_KEY = "9rP1CLlxuoRWPvkEiOMxxIwNyffjUEb4"
+    NEWS_API_KEY = "YOUR_NEWS_API_KEY"  # Add if using News API for sentiment
     
     # Data Sources
     DATA_SOURCES = {
@@ -25,7 +26,8 @@ class Config:
         "Yahoo Finance": "Historical price data for stocks and ETFs",
         "Quandl": "Mortgage rate data, treasury yield data, and housing market trends",
         "U.S. Census Bureau API": "Datasets for housing permits, construction, and other indicators",
-        "Alpha Vantage": "Macroeconomic data, including interest rates and financial market data"
+        "Alpha Vantage": "Macroeconomic data, including interest rates and financial market data",
+        "Political Data": "Political sentiment and market impact analysis"  # Added this source
     }
     
     # Economic Indicators
@@ -36,6 +38,54 @@ class Config:
         'IEF': 'iShares 7-10 Year Treasury Bond ETF',
         'POLSENT': 'Political Sentiment',
         'UNRATE': 'Unemployment Rate'
+    }
+    
+    # Detailed Indicator Information
+    INDICATOR_DETAILS = {
+        'POLSENT': {
+            'description': 'Political Sentiment Index',
+            'frequency': 'Daily',
+            'source': 'Multi-source analysis',
+            'units': 'Sentiment Score (-1 to 1)',
+            'impact': 'Measures political climate impact on markets',
+            'methodology': 'Combines news sentiment, policy analysis, and market reaction',
+            'update_frequency': 'Real-time'
+        },
+        'CPIAUCSL': {
+            'description': 'Consumer Price Index',
+            'frequency': 'Monthly',
+            'source': 'FRED',
+            'units': 'Index 1982-1984=100',
+            'impact': 'Measures inflation and purchasing power'
+        },
+        'DFF': {
+            'description': 'Federal Funds Rate',
+            'frequency': 'Daily',
+            'source': 'FRED',
+            'units': 'Percent',
+            'impact': 'Key interest rate affecting markets'
+        },
+        'GDP': {
+            'description': 'Gross Domestic Product',
+            'frequency': 'Quarterly',
+            'source': 'FRED',
+            'units': 'Billions of Dollars',
+            'impact': 'Overall economic health indicator'
+        },
+        'IEF': {
+            'description': 'iShares 7-10 Year Treasury Bond ETF',
+            'frequency': 'Daily',
+            'source': 'Yahoo Finance',
+            'units': 'USD',
+            'impact': 'Treasury yield and bond market indicator'
+        },
+        'UNRATE': {
+            'description': 'Unemployment Rate',
+            'frequency': 'Monthly',
+            'source': 'FRED',
+            'units': 'Percent',
+            'impact': 'Labor market and economic health indicator'
+        }
     }
     
     # Real Estate Indicators
@@ -70,6 +120,16 @@ class Config:
         }
     }
 
+    # Political Sentiment Configuration
+    POLITICAL_SENTIMENT_CONFIG = {
+        'data_sources': ['News API', 'Social Media', 'Market Analysis'],
+        'update_frequency': 'Daily',
+        'analysis_methods': ['NLP', 'Sentiment Analysis', 'Topic Modeling'],
+        'impact_metrics': ['Market Correlation', 'Volatility Impact', 'Trend Analysis'],
+        'lookback_period': 365,  # Days of historical data to consider
+        'confidence_threshold': 0.6  # Minimum confidence score for sentiment analysis
+    }
+
 # Model descriptions
 MODEL_DESCRIPTIONS = {
     "Prophet": {
@@ -84,7 +144,8 @@ MODEL_DESCRIPTIONS = {
         "best_use_cases": [
             "Stock price forecasting",
             "Cryptocurrency price prediction",
-            "Economic indicator analysis"
+            "Economic indicator analysis",
+            "Political sentiment integration"  # Added this use case
         ],
         "limitations": [
             "May not capture sudden market shocks",
