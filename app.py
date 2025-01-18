@@ -12,7 +12,8 @@ from forecasting import (
     display_economic_indicators,
     add_technical_indicators
 )
-from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
+from sentiment_analyzer import MultiSourceSentimentAnalyzer, integrate_multi_source_sentiment
+from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
 
 def display_footer():
     """Display the application footer"""
@@ -80,7 +81,7 @@ def main():
 
         # Analysis Options
         if forecast_type == "Price + Market Sentiment":
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 sentiment_period = st.slider(
                     "Sentiment Analysis Period (days)",
@@ -92,6 +93,12 @@ def main():
                     "Sentiment Impact Weight",
                     0.0, 1.0, 0.5,
                     help="Weight of sentiment analysis in the forecast (0 = none, 1 = maximum)"
+                )
+            with col3:
+                sentiment_source = st.selectbox(
+                    "Sentiment Data Source",
+                    ["Multi-Source", "GDELT", "News API", "Yahoo Finance"],
+                    help="Choose the source for sentiment analysis"
                 )
         
         # Sidebar Content
@@ -146,7 +153,22 @@ def main():
                     # Get sentiment data if selected
                     sentiment_data = None
                     if forecast_type == "Price + Market Sentiment":
-                        sentiment_data = integrate_sentiment_analysis(sentiment_period)
+                        if sentiment_source == "Multi-Source":
+                            sentiment_data = integrate_multi_source_sentiment(symbol, sentiment_period)
+                        elif sentiment_source == "GDELT":
+                            gdelt_analyzer = GDELTAnalyzer()
+                            sentiment_data = gdelt_analyzer.fetch_sentiment_data(
+                                (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d"),
+                                datetime.now().strftime("%Y-%m-%d")
+                            )
+                        else:
+                            # Use specific source from multi-source analyzer
+                            analyzer = MultiSourceSentimentAnalyzer()
+                            sentiment_data = getattr(analyzer, f'fetch_{sentiment_source.lower().replace(" ", "_")}_sentiment')(
+                                symbol, 
+                                (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d"),
+                                datetime.now().strftime("%Y-%m-%d")
+                            )
                     
                     if price_data is not None:
                         if selected_model != "Prophet":
@@ -166,13 +188,10 @@ def main():
                                 )
                             
                             if forecast is not None:
-                                # Add technical indicators
+                                # Display results
                                 price_data = add_technical_indicators(price_data, asset_type)
-                                
-                                # Display metrics and analysis
                                 display_metrics(price_data, forecast, asset_type, symbol)
                                 
-                                # Display sentiment impact if available
                                 if impact_metrics and forecast_type == "Price + Market Sentiment":
                                     st.subheader("🎭 Sentiment Impact Analysis")
                                     col1, col2, col3 = st.columns(3)
@@ -195,7 +214,6 @@ def main():
                                             f"{impact_metrics['price_sensitivity']:.2f}"
                                         )
                                 
-                                # Create and display forecast plot
                                 fig = create_forecast_plot(price_data, forecast, 
                                                          "Enhanced Prophet" if forecast_type == "Price + Market Sentiment" else "Prophet", 
                                                          symbol)
@@ -211,14 +229,12 @@ def main():
                 st.exception(e)
 
             finally:
-                # Add some spacing before the footer
                 st.markdown("<br><br><br>", unsafe_allow_html=True)
                 display_footer()
 
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.exception(e)
-        # Add some spacing before the footer
         st.markdown("<br><br><br>", unsafe_allow_html=True)
         display_footer()
 
