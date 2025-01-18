@@ -1,5 +1,5 @@
-# app.py
 import streamlit as st
+from datetime import datetime, timedelta
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
 from forecasting import (
@@ -14,6 +14,40 @@ from forecasting import (
 )
 from sentiment_analyzer import MultiSourceSentimentAnalyzer, integrate_multi_source_sentiment
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+from typing import Optional
+import pandas as pd
+
+def get_sentiment_data(analyzer, symbol: str, start_date: str, end_date: str, sentiment_source: str) -> Optional[pd.DataFrame]:
+    """Get sentiment data from specified source"""
+    try:
+        # Map sentiment sources to method names
+        source_method_map = {
+            "Yahoo Finance": "yahoo",
+            "News API": "newsapi",
+            "Finnhub": "finnhub",
+            "Multi-Source": "combined"
+        }
+        
+        # Get the correct method name from the map
+        method_name = source_method_map.get(sentiment_source)
+        if not method_name:
+            st.error(f"Invalid sentiment source: {sentiment_source}")
+            return None
+            
+        # Construct the full method name
+        method_name = f"fetch_{method_name}_sentiment"
+        
+        # Get the method and call it
+        sentiment_method = getattr(analyzer, method_name, None)
+        if sentiment_method is None:
+            st.error(f"Method {method_name} not found in analyzer")
+            return None
+            
+        return sentiment_method(symbol, start_date, end_date)
+        
+    except Exception as e:
+        st.error(f"Error getting sentiment data: {str(e)}")
+        return None
 
 def display_footer():
     """Display the application footer"""
@@ -23,6 +57,144 @@ def display_footer():
         </div>
     """, unsafe_allow_html=True)
 
+def display_sentiment_impact_analysis(sentiment_period: int, sentiment_weight: float, sentiment_source: str):
+    """Display sentiment impact analysis configuration and explanation"""
+    st.markdown("### 🎭 Sentiment Impact Analysis")
+    
+    # Configure columns for metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Analysis Period",
+            f"{sentiment_period} days",
+            help="Historical period used for sentiment analysis"
+        )
+    
+    with col2:
+        impact_level = (
+            "High" if sentiment_weight > 0.7
+            else "Medium" if sentiment_weight > 0.3
+            else "Low"
+        )
+        impact_color = (
+            "🔴" if sentiment_weight > 0.7
+            else "🟡" if sentiment_weight > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Impact Level",
+            f"{impact_level} {impact_color}",
+            f"{sentiment_weight:.1%}",
+            help="Level of influence sentiment has on forecast"
+        )
+    
+    with col3:
+        source_reliability = {
+            "Multi-Source": {"level": "High", "confidence": 0.9},
+            "GDELT": {"level": "Medium-High", "confidence": 0.8},
+            "Yahoo Finance": {"level": "Medium", "confidence": 0.7},
+            "News API": {"level": "Medium", "confidence": 0.7}
+        }
+        
+        reliability_info = source_reliability.get(sentiment_source, {"level": "Medium", "confidence": 0.7})
+        st.metric(
+            "Source Reliability",
+            reliability_info['level'],
+            f"{reliability_info['confidence']:.0%}",
+            help="Reliability of the selected sentiment data source"
+        )
+    
+    # Display impact explanation
+    with st.expander("💡 Understanding Sentiment Impact"):
+        st.markdown("""
+        **How Sentiment Affects the Forecast:**
+        
+        1. **Analysis Period** (Historical Window)
+           - Longer periods provide more stable analysis
+           - Shorter periods capture recent market sentiment
+           - Optimal period varies by asset volatility
+        
+        2. **Impact Level** (Weight)
+           - High (>70%): Strong sentiment influence
+           - Medium (30-70%): Balanced price-sentiment mix
+           - Low (<30%): Minimal sentiment adjustment
+        
+        3. **Source Reliability**
+           - Multi-Source: Highest reliability (combined sources)
+           - GDELT: Global event impact
+           - News/Finance API: Market-specific sentiment
+        """)
+
+def display_sentiment_impact_results(impact_metrics: dict):
+    """Display sentiment impact analysis results"""
+    st.subheader("🎭 Sentiment Impact Results")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        correlation = impact_metrics.get('sentiment_correlation', 0)
+        correlation_color = (
+            "🟢" if abs(correlation) > 0.7
+            else "🟡" if abs(correlation) > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price-Sentiment Correlation",
+            f"{correlation:.2f} {correlation_color}"
+        )
+    
+    with col2:
+        volatility = impact_metrics.get('sentiment_volatility', 0)
+        volatility_color = (
+            "🔴" if volatility > 0.7
+            else "🟡" if volatility > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Sentiment Volatility",
+            f"{volatility:.2f} {volatility_color}"
+        )
+    
+    with col3:
+        sensitivity = impact_metrics.get('price_sensitivity', 0)
+        sensitivity_color = (
+            "🟡" if sensitivity > 0.7
+            else "🟢" if sensitivity > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price Sensitivity",
+            f"{sensitivity:.2f} {sensitivity_color}"
+        )
+    
+    # Add impact interpretation
+    with st.expander("📊 Impact Analysis Interpretation"):
+        st.markdown(f"""
+        **Current Market Sentiment Analysis:**
+        
+        1. **Correlation** ({correlation:.2f}):
+           - {
+            "Strong price-sentiment relationship" if abs(correlation) > 0.7
+            else "Moderate price-sentiment relationship" if abs(correlation) > 0.3
+            else "Weak price-sentiment relationship"
+           }
+        
+        2. **Volatility** ({volatility:.2f}):
+           - {
+            "High sentiment volatility - exercise caution" if volatility > 0.7
+            else "Moderate sentiment volatility" if volatility > 0.3
+            else "Low sentiment volatility - stable sentiment"
+           }
+        
+        3. **Price Sensitivity** ({sensitivity:.2f}):
+           - {
+            "High price sensitivity to sentiment" if sensitivity > 0.7
+            else "Moderate price sensitivity" if sensitivity > 0.3
+            else "Low price sensitivity to sentiment"
+           }
+        """)
+        
 def main():
     try:
         st.set_page_config(
@@ -79,7 +251,7 @@ def main():
             horizontal=True
         )
 
-        # Analysis Options
+        # Analysis Options with Enhanced Sentiment Impact
         if forecast_type == "Price + Market Sentiment":
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -97,9 +269,12 @@ def main():
             with col3:
                 sentiment_source = st.selectbox(
                     "Sentiment Data Source",
-                    ["Multi-Source", "GDELT", "News API", "Yahoo Finance"],
+                    ["Multi-Source", "GDELT", "Yahoo Finance", "News API"],
                     help="Choose the source for sentiment analysis"
                 )
+            
+            # Display sentiment impact analysis in UI
+            display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source)
         
         # Sidebar Content
         with st.sidebar:
@@ -133,8 +308,8 @@ def main():
             with st.expander("View Data Sources"):
                 for source, description in Config.DATA_SOURCES.items():
                     st.markdown(f"**{source}**: {description}")
-
-        # Generate Forecast button
+                    
+# Generate Forecast button
         if st.button("🚀 Generate Forecast"):
             try:
                 with st.spinner('Loading data...'):
@@ -153,22 +328,26 @@ def main():
                     # Get sentiment data if selected
                     sentiment_data = None
                     if forecast_type == "Price + Market Sentiment":
-                        if sentiment_source == "Multi-Source":
-                            sentiment_data = integrate_multi_source_sentiment(symbol, sentiment_period)
-                        elif sentiment_source == "GDELT":
-                            gdelt_analyzer = GDELTAnalyzer()
-                            sentiment_data = gdelt_analyzer.fetch_sentiment_data(
-                                (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d"),
-                                datetime.now().strftime("%Y-%m-%d")
-                            )
-                        else:
-                            # Use specific source from multi-source analyzer
-                            analyzer = MultiSourceSentimentAnalyzer()
-                            sentiment_data = getattr(analyzer, f'fetch_{sentiment_source.lower().replace(" ", "_")}_sentiment')(
-                                symbol, 
-                                (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d"),
-                                datetime.now().strftime("%Y-%m-%d")
-                            )
+                        start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+                        end_date = datetime.now().strftime("%Y-%m-%d")
+                        
+                        # Display sentiment data loading status
+                        with st.spinner(f'Fetching sentiment data from {sentiment_source}...'):
+                            if sentiment_source == "GDELT":
+                                gdelt_analyzer = GDELTAnalyzer()
+                                sentiment_data = gdelt_analyzer.fetch_sentiment_data(start_date, end_date)
+                            else:
+                                analyzer = MultiSourceSentimentAnalyzer()
+                                sentiment_data = get_sentiment_data(
+                                    analyzer,
+                                    symbol,
+                                    start_date,
+                                    end_date,
+                                    sentiment_source
+                                )
+                            
+                            if sentiment_data is None:
+                                st.warning(f"Could not fetch sentiment data from {sentiment_source}. Proceeding with price-only forecast.")
                     
                     if price_data is not None:
                         if selected_model != "Prophet":
@@ -189,38 +368,44 @@ def main():
                             
                             if forecast is not None:
                                 # Display results
+                                st.success("Forecast generated successfully!")
+                                
+                                # Add technical indicators
                                 price_data = add_technical_indicators(price_data, asset_type)
+                                
+                                # Display metrics section
+                                st.markdown("### 📊 Market Metrics & Analysis")
                                 display_metrics(price_data, forecast, asset_type, symbol)
                                 
+                                # Display sentiment impact results if available
                                 if impact_metrics and forecast_type == "Price + Market Sentiment":
-                                    st.subheader("🎭 Sentiment Impact Analysis")
-                                    col1, col2, col3 = st.columns(3)
-                                    
-                                    with col1:
-                                        st.metric(
-                                            "Sentiment Correlation",
-                                            f"{impact_metrics['sentiment_correlation']:.2f}"
-                                        )
-                                    
-                                    with col2:
-                                        st.metric(
-                                            "Sentiment Volatility",
-                                            f"{impact_metrics['sentiment_volatility']:.2f}"
-                                        )
-                                    
-                                    with col3:
-                                        st.metric(
-                                            "Price Sensitivity",
-                                            f"{impact_metrics['price_sensitivity']:.2f}"
-                                        )
+                                    display_sentiment_impact_results(impact_metrics)
                                 
+                                # Display forecast plot
+                                st.markdown("### 📈 Forecast Visualization")
                                 fig = create_forecast_plot(price_data, forecast, 
                                                          "Enhanced Prophet" if forecast_type == "Price + Market Sentiment" else "Prophet", 
                                                          symbol)
                                 st.plotly_chart(fig, use_container_width=True)
                                 
-                                with st.expander("View Detailed Forecast Data"):
-                                    st.dataframe(forecast)
+                                # Display confidence analysis
+                                display_confidence_analysis(forecast)
+                                
+                                # Display detailed forecast data
+                                with st.expander("🔍 View Detailed Forecast Data"):
+                                    st.dataframe(forecast.style.highlight_max(['yhat'], color='lightgreen')
+                                               .highlight_min(['yhat'], color='lightpink'))
+                                    
+                                    # Add download button for forecast data
+                                    csv = forecast.to_csv(index=False)
+                                    st.download_button(
+                                        label="Download Forecast Data",
+                                        data=csv,
+                                        file_name=f"{symbol}_forecast.csv",
+                                        mime="text/csv",
+                                    )
+                            else:
+                                st.error("Failed to generate forecast. Please try again with different parameters.")
                     else:
                         st.error(f"Could not load data for {symbol}. Please verify the symbol.")
 
