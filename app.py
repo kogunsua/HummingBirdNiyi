@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -12,6 +13,14 @@ from forecasting import (
     add_technical_indicators
 )
 from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
+
+def display_footer():
+    """Display the application footer"""
+    st.markdown("""
+        <div style='text-align: center; padding: 10px; position: fixed; bottom: 0; width: 100%;'>
+            <p style='margin-bottom: 10px;'>© 2025 AvaResearch LLC. All rights reserved.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 def main():
     try:
@@ -196,14 +205,21 @@ def main():
                                     st.dataframe(forecast)
                     else:
                         st.error(f"Could not load data for {symbol}. Please verify the symbol.")
+
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
                 st.exception(e)
+
             finally:
+                # Add some spacing before the footer
+                st.markdown("<br><br><br>", unsafe_allow_html=True)
                 display_footer()
+
     except Exception as e:
         st.error(f"An unexpected error occurred: {str(e)}")
         st.exception(e)
+        # Add some spacing before the footer
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
         display_footer()
 
 if __name__ == "__main__":
