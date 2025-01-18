@@ -213,13 +213,18 @@ def integrate_sentiment_analysis(app_instance) -> Optional[pd.DataFrame]:
         return None
 
 def update_forecasting_process(price_data: pd.DataFrame, 
-                             sentiment_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Dict]:
-    """Updated forecasting process incorporating sentiment analysis"""
+                             sentiment_data: Optional[pd.DataFrame] = None,
+                             sentiment_weight: float = 0.5) -> Tuple[Optional[pd.DataFrame], Dict]:
+    """Updated forecasting process incorporating sentiment analysis with configurable weight"""
     try:
         analyzer = GDELTAnalyzer()
         
         if sentiment_data is not None and not sentiment_data.empty:
             combined_data = analyzer.prepare_combined_forecast_data(price_data, sentiment_data)
+            
+            # Adjust sentiment scores based on weight
+            combined_data['sentiment_score'] = combined_data['sentiment_score'] * sentiment_weight
+            
             forecast, error = analyzer.enhanced_prophet_forecast(combined_data)
             
             if error:
@@ -231,9 +236,6 @@ def update_forecasting_process(price_data: pd.DataFrame,
         else:
             from forecasting import prophet_forecast
             forecast, error = prophet_forecast(price_data, periods=30)
-            if error:
-                st.error(f"Forecasting error: {error}")
-                return None, {}
             return forecast, {}
             
     except Exception as e:
