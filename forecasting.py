@@ -22,37 +22,41 @@ def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str = 'stocks') -> 
 
         # Make a copy of the data
         df = data.copy()
-
-        # Standardize date column handling for both asset types
-        date_column = None
         
-        # Check for DatetimeIndex
+        # Handle multi-index columns if present
+        if isinstance(df.columns, pd.MultiIndex):
+            # Get the first level values where second level matches the symbol
+            symbol = df.columns[0][1]  # Get the symbol from first column
+            # Create a new dataframe with single-level columns
+            df = pd.DataFrame({
+                col[0]: df[col] for col in df.columns if col[1] == symbol
+            })
+            logger.info(f"Processed multi-index columns. New columns: {df.columns.tolist()}")
+
+        # Standardize date column handling
         if isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
-            date_column = df.columns[0]  # The reset index column
-        # Check common date column names
-        elif any(col in df.columns for col in ['Date', 'date', 'TIME', 'Time', 'time', 'timestamp', 'Timestamp']):
-            date_column = next(col for col in df.columns 
-                             if col in ['Date', 'date', 'TIME', 'Time', 'time', 'timestamp', 'Timestamp'])
-            
-        # If no date column found, raise an error
-        if date_column is None:
+            df.rename(columns={'index': 'ds'}, inplace=True)
+        elif 'Date' in df.columns:
+            df.rename(columns={'Date': 'ds'}, inplace=True)
+        elif any(col in df.columns for col in ['TIME', 'Time', 'time', 'timestamp', 'Timestamp']):
+            date_col = next(col for col in df.columns 
+                          if col in ['TIME', 'Time', 'time', 'timestamp', 'Timestamp'])
+            df.rename(columns={date_col: 'ds'}, inplace=True)
+        else:
             raise ValueError("No date column found in the dataset")
-            
-        # Rename the date column to 'ds'
-        df = df.rename(columns={date_column: 'ds'})
-        
-        # Handle the 'y' column (target variable)
+
+        # Handle the target variable (y)
         if 'Close' in df.columns:
             df['y'] = df['Close']
-        elif 'y' not in df.columns:
+        else:
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 df['y'] = df[numeric_cols[0]]
             else:
                 raise ValueError("No numeric column found for target variable")
 
-        # Ensure datetime is timezone naive
+        # Ensure datetime is timezone naive and parsed correctly
         df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
         
         # Convert target to float
