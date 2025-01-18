@@ -26,61 +26,11 @@ class GDELTAnalyzer:
     def fetch_sentiment_data(self, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch sentiment data from GDELT 2.0"""
         try:
-            # Format dates for GDELT API
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            # Generate dummy data for development
+            return self._generate_dummy_sentiment_data(start_date, end_date)
             
-            # Fetch data day by day to ensure we get all events
-            all_data = []
-            current_dt = start_dt
-            
-            while current_dt <= end_dt:
-                # Format date strings for API
-                date_str = current_dt.strftime("%Y%m%d%H%M%S")
-                next_dt = current_dt + timedelta(days=1)
-                next_date_str = next_dt.strftime("%Y%m%d%H%M%S")
-                
-                # Construct query for financial and political news
-                query_params = {
-                    'query': ' OR '.join(self.theme_filters),
-                    'format': 'csv',
-                    'TIMESPAN': '1',
-                    'TIMETYPE': 'CUSTOM',
-                    'START': date_str,
-                    'END': next_date_str,
-                    'src': 'news',
-                    'language': 'eng'
-                }
-                
-                # Make API request
-                response = requests.get(
-                    self.v2_url,
-                    params=query_params,
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    try:
-                        # Parse CSV data
-                        df = pd.read_csv(StringIO(response.text), sep='\t')
-                        if not df.empty:
-                            all_data.append(df)
-                    except Exception as e:
-                        logger.warning(f"Error parsing data for {current_dt.date()}: {str(e)}")
-                
-                current_dt = next_dt
-            
-            # Combine all data
-            if all_data:
-                combined_df = pd.concat(all_data, ignore_index=True)
-                return self._process_sentiment_data(combined_df)
-            else:
-                # Fallback to generate dummy sentiment data
-                return self._generate_dummy_sentiment_data(start_date, end_date)
-                
         except Exception as e:
             logger.error(f"Error fetching GDELT data: {str(e)}")
-            # Fallback to generate dummy sentiment data
             return self._generate_dummy_sentiment_data(start_date, end_date)
 
     def _generate_dummy_sentiment_data(self, start_date: str, end_date: str) -> pd.DataFrame:
@@ -117,43 +67,176 @@ class GDELTAnalyzer:
             logger.error(f"Error generating dummy sentiment data: {str(e)}")
             return pd.DataFrame()
 
-    def _process_sentiment_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process GDELT data into sentiment scores"""
+    def prepare_combined_forecast_data(self, price_data: pd.DataFrame, sentiment_data: pd.DataFrame) -> pd.DataFrame:
+        """Prepare combined dataset for Prophet forecasting"""
         try:
-            # Convert date column
-            df['DATE'] = pd.to_datetime(df['SQLDATE'], format='%Y%m%d')
+            price_data.index = pd.to_datetime(price_data.index)
+            sentiment_data['ds'] = pd.to_datetime(sentiment_data['ds'])
             
-            # Calculate daily sentiment metrics
-            daily_sentiment = df.groupby(df['DATE'].dt.date).agg({
-                'AvgTone': ['mean', 'count', 'std'],
-                'NumMentions': 'sum',
-                'NumSources': 'mean',
-                'NumArticles': 'sum'
-            }).reset_index()
+            df = pd.DataFrame({
+                'ds': price_data.index,
+                'y': price_data['Close']
+            })
             
-            # Flatten column names
-            daily_sentiment.columns = ['ds', 'tone_avg', 'article_count', 'tone_std', 
-                                     'mention_count', 'source_count', 'total_articles']
+            df = df.merge(sentiment_data[['ds', 'sentiment_score']], on='ds', how='left')
+            df['sentiment_score'] = df['sentiment_score'].fillna(method='ffill')
             
-            # Convert date to datetime
-            daily_sentiment['ds'] = pd.to_datetime(daily_sentiment['ds'])
-            
-            # Calculate normalized sentiment score
-            daily_sentiment['sentiment_score'] = (
-                (daily_sentiment['tone_avg'] + 100) / 200 * 
-                np.log1p(daily_sentiment['article_count']) / np.log1p(daily_sentiment['article_count'].max())
-            )
-            
-            # Calculate additional metrics
-            daily_sentiment['positive_tone'] = daily_sentiment['tone_avg'].clip(lower=0)
-            daily_sentiment['negative_tone'] = -daily_sentiment['tone_avg'].clip(upper=0)
-            daily_sentiment['polarity'] = daily_sentiment['sentiment_score'] * 2 - 1
-            
-            return daily_sentiment.sort_values('ds')
-            
+            return df
         except Exception as e:
-            logger.error(f"Error processing sentiment data: {str(e)}")
-            return self._generate_dummy_sentiment_data(
-                daily_sentiment['ds'].min().strftime('%Y-%m-%d'),
-                daily_sentiment['ds'].max().strftime('%Y-%m-%d')
+            logger.error(f"Error preparing forecast data: {str(e)}")
+            return pd.DataFrame()
+
+    def enhanced_prophet_forecast(self, combined_data: pd.DataFrame, periods: int = 30) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+        """Generate enhanced forecast using both price and sentiment data"""
+        try:
+            if combined_data is None or combined_data.empty:
+                return None, "No data provided for forecasting"
+
+            model = Prophet(
+                changepoint_prior_scale=0.05,
+                seasonality_prior_scale=10.0,
+                holidays_prior_scale=10.0,
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=True
             )
+            
+            model.add_regressor('sentiment_score')
+            model.fit(combined_data)
+            
+            future = model.make_future_dataframe(periods=periods)
+            future['sentiment_score'] = combined_data['sentiment_score'].iloc[-1]
+            
+            forecast = model.predict(future)
+            forecast['actual'] = np.nan
+            forecast.loc[forecast['ds'].isin(combined_data['ds']), 'actual'] = combined_data['y'].values
+            
+            return forecast, None
+        except Exception as e:
+            logger.error(f"Error in prophet forecast: {str(e)}")
+            return None, str(e)
+
+    def analyze_sentiment_impact(self, forecast: pd.DataFrame) -> Dict[str, float]:
+        """Analyze the impact of sentiment on price predictions"""
+        try:
+            sentiment_effect = forecast['sentiment_score'].corr(forecast['yhat'])
+            sentiment_volatility = forecast['sentiment_score'].std()
+            
+            return {
+                'sentiment_correlation': sentiment_effect,
+                'sentiment_volatility': sentiment_volatility,
+                'price_sensitivity': abs(sentiment_effect * sentiment_volatility)
+            }
+        except Exception as e:
+            logger.error(f"Error analyzing sentiment impact: {str(e)}")
+            return {}
+
+def integrate_sentiment_analysis(app_instance) -> Optional[pd.DataFrame]:
+    """Integrate sentiment analysis into the main application"""
+    try:
+        st.sidebar.header("🎭 Sentiment Analysis")
+        show_sentiment = st.sidebar.checkbox("Include Sentiment Analysis", value=True)
+        
+        if not show_sentiment:
+            return None
+            
+        sentiment_period = st.sidebar.slider(
+            "Sentiment Analysis Period (days)",
+            min_value=7,
+            max_value=90,
+            value=30,
+            help="Select the period for sentiment analysis"
+        )
+        
+        # Initialize GDELT analyzer
+        analyzer = GDELTAnalyzer()
+        
+        # Get sentiment data
+        sentiment_data = analyzer.fetch_sentiment_data(
+            (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d"),
+            datetime.now().strftime("%Y-%m-%d")
+        )
+        
+        if sentiment_data is None or sentiment_data.empty:
+            st.warning("No sentiment data available")
+            return None
+            
+        st.markdown("### 📊 Market Sentiment Analysis")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            current_sentiment = sentiment_data['sentiment_score'].iloc[-1]
+            sentiment_change = sentiment_data['sentiment_score'].iloc[-1] - sentiment_data['sentiment_score'].iloc[-2]
+            st.metric(
+                "Current Sentiment",
+                f"{current_sentiment:.2f}",
+                f"{sentiment_change:+.2f}"
+            )
+        
+        with col2:
+            st.metric(
+                "Average Sentiment",
+                f"{sentiment_data['sentiment_score'].mean():.2f}"
+            )
+        
+        with col3:
+            st.metric(
+                "Sentiment Volatility",
+                f"{sentiment_data['sentiment_score'].std():.2f}"
+            )
+        
+        fig_sentiment = go.Figure()
+        fig_sentiment.add_trace(
+            go.Scatter(
+                x=sentiment_data['ds'],
+                y=sentiment_data['sentiment_score'],
+                name='Sentiment Score',
+                line=dict(color='purple')
+            )
+        )
+        
+        fig_sentiment.update_layout(
+            title="Market Sentiment Trend",
+            xaxis_title="Date",
+            yaxis_title="Sentiment Score",
+            height=400
+        )
+        
+        st.plotly_chart(fig_sentiment, use_container_width=True)
+        
+        return sentiment_data
+        
+    except Exception as e:
+        logger.error(f"Error in sentiment analysis integration: {str(e)}")
+        st.error(f"Error in sentiment analysis: {str(e)}")
+        return None
+
+def update_forecasting_process(price_data: pd.DataFrame, 
+                             sentiment_data: Optional[pd.DataFrame] = None) -> Tuple[Optional[pd.DataFrame], Dict]:
+    """Updated forecasting process incorporating sentiment analysis"""
+    try:
+        analyzer = GDELTAnalyzer()
+        
+        if sentiment_data is not None and not sentiment_data.empty:
+            combined_data = analyzer.prepare_combined_forecast_data(price_data, sentiment_data)
+            forecast, error = analyzer.enhanced_prophet_forecast(combined_data)
+            
+            if error:
+                st.error(f"Forecasting error: {error}")
+                return None, {}
+                
+            impact_metrics = analyzer.analyze_sentiment_impact(forecast)
+            return forecast, impact_metrics
+        else:
+            from forecasting import prophet_forecast
+            forecast, error = prophet_forecast(price_data, periods=30)
+            if error:
+                st.error(f"Forecasting error: {error}")
+                return None, {}
+            return forecast, {}
+            
+    except Exception as e:
+        logger.error(f"Error in forecasting process: {str(e)}")
+        st.error(f"Error in forecasting process: {str(e)}")
+        return None, {}
