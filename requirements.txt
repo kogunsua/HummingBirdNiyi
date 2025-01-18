@@ -16,3 +16,6 @@ cmdstanpy
 polygon-api-client
 pycoingecko
 statsmodels
+newsapi-python
+nltk
+textblob
