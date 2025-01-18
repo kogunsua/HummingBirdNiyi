@@ -1,7 +1,6 @@
 """
 GDELT data fetching and processing functionality
 """
-
 #gdelt_fetchers.py
 import pandas as pd
 import requests
