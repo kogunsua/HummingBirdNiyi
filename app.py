@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -11,6 +12,14 @@ from forecasting import (
     display_economic_indicators,
     add_technical_indicators
 )
+import os
+import sys
+
+# Add the current directory to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
 
 def display_footer():
