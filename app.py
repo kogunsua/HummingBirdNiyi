@@ -1,4 +1,4 @@
-#appy.py
+# app.py
 import streamlit as st
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
@@ -12,6 +12,7 @@ from forecasting import (
     display_economic_indicators,
     add_technical_indicators
 )
+from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
 
 def display_footer():
     """Display the application footer"""
@@ -33,7 +34,7 @@ def main():
         st.markdown("""
             <div style='text-align: center;'>
                 <h1>🐦 HummingBird v2m</h1>
-                <p><i>Digital Asset Stock Forecasting with Economic Indicators</i></p>
+                <p><i>Digital Asset Stock Forecasting with Economic and Sentiment Indicators</i></p>
                 <p>AvaResearch LLC - A Black Collar Production</p>
             </div>
         """, unsafe_allow_html=True)
@@ -50,18 +51,15 @@ def main():
             model_info = MODEL_DESCRIPTIONS[selected_model]
             st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
             
-            # Display development status
             status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
             st.sidebar.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
                               unsafe_allow_html=True)
             
-            # Display confidence rating
             confidence = model_info['confidence_rating']
             color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
             st.sidebar.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
                               unsafe_allow_html=True)
             
-            # Display use cases and limitations
             st.sidebar.markdown("**Best Use Cases:**")
             for use_case in model_info['best_use_cases']:
                 st.sidebar.markdown(f"- {use_case}")
@@ -82,21 +80,6 @@ def main():
             ['None'] + list(Config.INDICATORS.keys()),
             format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
         )
-        
-        # Sidebar - Real Estate Indicators
-        st.sidebar.header("🏠 Real Estate Indicators")
-        selected_re_indicator = st.sidebar.selectbox(
-            "Select Real Estate Indicator",
-            ['None'] + list(Config.REAL_ESTATE_INDICATORS.keys()),
-            format_func=lambda x: Config.REAL_ESTATE_INDICATORS[x]['description'] if x != 'None' and x in Config.REAL_ESTATE_INDICATORS else x
-        )
-
-        if selected_re_indicator != 'None':
-            re_info = Config.REAL_ESTATE_INDICATORS[selected_re_indicator]
-            st.sidebar.markdown(f"""
-                **Description:** {re_info['description']}  
-                **Status:** ⚠️ {re_info['status']}
-            """)
 
         # Input Section
         col1, col2, col3 = st.columns(3)
@@ -128,42 +111,69 @@ def main():
                 7, 90, Config.DEFAULT_PERIODS,
                 help="Select the number of days to forecast"
             )
+
+        # Initialize GDELT analyzer
+        gdelt_analyzer = GDELTAnalyzer()
         
         # Generate Forecast
         if st.button("🚀 Generate Forecast"):
             try:
                 with st.spinner('Loading data...'):
+                    # Get asset data
                     fetcher = AssetDataFetcher()
-                    data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
+                    price_data = fetcher.get_stock_data(symbol) if asset_type == "Stocks" else fetcher.get_crypto_data(symbol)
                     
-                    # Get economic indicator data
+                    # Get economic indicator data if selected
                     economic_data = None
                     if selected_indicator != 'None':
                         economic_indicators = EconomicIndicators()
                         economic_data = economic_indicators.get_indicator_data(selected_indicator)
                         if economic_data is not None:
                             display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-
-                    # Display Real Estate Indicator status if selected
-                    if selected_re_indicator != 'None':
-                        st.info(f"Real Estate Indicator '{selected_re_indicator}' is currently under development.")
                     
-                    if data is not None:
+                    # Get sentiment data and display sentiment analysis
+                    sentiment_data = integrate_sentiment_analysis(None)  # Pass None as we're not using app instance
+                    
+                    if price_data is not None:
                         if selected_model != "Prophet":
                             st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
                         
                         with st.spinner('Generating forecast...'):
-                            forecast, error = prophet_forecast(data, periods, economic_data)
+                            # Generate forecast with sentiment analysis
+                            forecast, impact_metrics = update_forecasting_process(price_data, sentiment_data)
                             
-                            if error:
-                                st.error(f"Forecasting error: {error}")
-                            elif forecast is not None:
-                                # Add technical indicators to the data
-                                data = add_technical_indicators(data, asset_type)
+                            if forecast is not None:
+                                # Add technical indicators
+                                price_data = add_technical_indicators(price_data, asset_type)
                                 
-                                display_metrics(data, forecast, asset_type, symbol)
+                                # Display metrics and analysis
+                                display_metrics(price_data, forecast, asset_type, symbol)
                                 
-                                fig = create_forecast_plot(data, forecast, "Prophet", symbol)
+                                # Display sentiment impact if available
+                                if impact_metrics:
+                                    st.subheader("🎭 Sentiment Impact Analysis")
+                                    col1, col2, col3 = st.columns(3)
+                                    
+                                    with col1:
+                                        st.metric(
+                                            "Sentiment Correlation",
+                                            f"{impact_metrics['sentiment_correlation']:.2f}"
+                                        )
+                                    
+                                    with col2:
+                                        st.metric(
+                                            "Sentiment Volatility",
+                                            f"{impact_metrics['sentiment_volatility']:.2f}"
+                                        )
+                                    
+                                    with col3:
+                                        st.metric(
+                                            "Price Sensitivity",
+                                            f"{impact_metrics['price_sensitivity']:.2f}"
+                                        )
+                                
+                                # Create and display forecast plot
+                                fig = create_forecast_plot(price_data, forecast, "Enhanced Prophet", symbol)
                                 st.plotly_chart(fig, use_container_width=True)
                                 
                                 with st.expander("View Detailed Forecast Data"):
@@ -177,11 +187,6 @@ def main():
             
             finally:
                 display_footer()
-
-    except Exception as e:
-        st.error(f"An unexpected error occurred: {str(e)}")
-        st.exception(e)
-        display_footer()
 
 if __name__ == "__main__":
     main()
