@@ -13,13 +13,6 @@ from forecasting import (
 )
 from gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
 
-def display_footer():
-    st.markdown("""
-        <div style='text-align: center; padding: 10px;'>
-            <p>© 2025 AvaResearch LLC. All rights reserved.</p>
-        </div>
-    """, unsafe_allow_html=True)
-
 def main():
     try:
         st.set_page_config(
@@ -36,52 +29,7 @@ def main():
             </div>
         """, unsafe_allow_html=True)
         
-        # Sidebar - Model Selection
-        st.sidebar.header("🔮 Select Forecasting Model")
-        selected_model = st.sidebar.selectbox(
-            "Available Models",
-            list(MODEL_DESCRIPTIONS.keys())
-        )
-
-        if selected_model in MODEL_DESCRIPTIONS:
-            model_info = MODEL_DESCRIPTIONS[selected_model]
-            st.sidebar.markdown(f"### Model Details\n{model_info['description']}")
-            
-            status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
-            st.sidebar.markdown(
-                f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
-                unsafe_allow_html=True
-            )
-            
-            confidence = model_info['confidence_rating']
-            color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
-            st.sidebar.markdown(
-                f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
-                unsafe_allow_html=True
-            )
-            
-            st.sidebar.markdown("**Best Use Cases:**")
-            for use_case in model_info['best_use_cases']:
-                st.sidebar.markdown(f"- {use_case}")
-            
-            st.sidebar.markdown("**Limitations:**")
-            for limitation in model_info['limitations']:
-                st.sidebar.markdown(f"- {limitation}")
-
-        # Sidebar - Data Sources
-        st.sidebar.header("📊 Data Sources")
-        for source, description in Config.DATA_SOURCES.items():
-            st.sidebar.markdown(f"**{source}**: {description}")
-        
-        # Sidebar - Economic Indicators
-        st.sidebar.header("📈 Economic Indicators")
-        selected_indicator = st.sidebar.selectbox(
-            "Select Economic Indicator",
-            ['None'] + list(Config.INDICATORS.keys()),
-            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
-        )
-
-        # Input Section
+        # Input Section - First Row
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -112,9 +60,64 @@ def main():
                 help="Select the number of days to forecast"
             )
 
-        # Initialize GDELT analyzer
-        gdelt_analyzer = GDELTAnalyzer()
+        # Forecast Type Selection
+        st.markdown("### 📊 Select Forecast Type")
+        forecast_type = st.radio(
+            "Choose forecast type",
+            ["Price Only", "Price + Market Sentiment"],
+            help="Choose whether to include market sentiment analysis in the forecast",
+            horizontal=True
+        )
+
+        # Analysis Options
+        if forecast_type == "Price + Market Sentiment":
+            col1, col2 = st.columns(2)
+            with col1:
+                sentiment_period = st.slider(
+                    "Sentiment Analysis Period (days)",
+                    7, 90, 30,
+                    help="Historical period for sentiment analysis"
+                )
+            with col2:
+                sentiment_weight = st.slider(
+                    "Sentiment Impact Weight",
+                    0.0, 1.0, 0.5,
+                    help="Weight of sentiment analysis in the forecast (0 = none, 1 = maximum)"
+                )
         
+        # Sidebar Content
+        with st.sidebar:
+            st.header("🔮 Model Configuration")
+            selected_model = st.selectbox(
+                "Select Forecasting Model",
+                list(MODEL_DESCRIPTIONS.keys())
+            )
+
+            if selected_model in MODEL_DESCRIPTIONS:
+                model_info = MODEL_DESCRIPTIONS[selected_model]
+                st.markdown(f"### Model Details\n{model_info['description']}")
+                
+                status_color = 'green' if model_info['development_status'] == 'Active' else 'orange'
+                st.markdown(f"**Status:** <span style='color:{status_color}'>{model_info['development_status']}</span>", 
+                           unsafe_allow_html=True)
+                
+                confidence = model_info['confidence_rating']
+                color = 'green' if confidence >= 0.8 else 'orange' if confidence >= 0.7 else 'red'
+                st.markdown(f"**Confidence Rating:** <span style='color:{color}'>{confidence:.0%}</span>", 
+                           unsafe_allow_html=True)
+
+            st.header("📈 Additional Indicators")
+            selected_indicator = st.selectbox(
+                "Select Economic Indicator",
+                ['None'] + list(Config.INDICATORS.keys()),
+                format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
+            )
+
+            st.header("📊 Data Sources")
+            with st.expander("View Data Sources"):
+                for source, description in Config.DATA_SOURCES.items():
+                    st.markdown(f"**{source}**: {description}")
+
         # Generate Forecast button
         if st.button("🚀 Generate Forecast"):
             try:
@@ -131,16 +134,27 @@ def main():
                         if economic_data is not None:
                             display_economic_indicators(economic_data, selected_indicator, economic_indicators)
                     
-                    # Get sentiment data and display sentiment analysis
-                    sentiment_data = integrate_sentiment_analysis(None)
+                    # Get sentiment data if selected
+                    sentiment_data = None
+                    if forecast_type == "Price + Market Sentiment":
+                        sentiment_data = integrate_sentiment_analysis(sentiment_period)
                     
                     if price_data is not None:
                         if selected_model != "Prophet":
                             st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
                         
                         with st.spinner('Generating forecast...'):
-                            # Generate forecast with sentiment analysis
-                            forecast, impact_metrics = update_forecasting_process(price_data, sentiment_data)
+                            if forecast_type == "Price Only":
+                                # Use regular price forecasting
+                                forecast, error = prophet_forecast(price_data, periods)
+                                impact_metrics = {}
+                            else:
+                                # Use sentiment-enhanced forecasting
+                                forecast, impact_metrics = update_forecasting_process(
+                                    price_data, 
+                                    sentiment_data,
+                                    sentiment_weight if 'sentiment_weight' in locals() else 0.5
+                                )
                             
                             if forecast is not None:
                                 # Add technical indicators
@@ -149,7 +163,8 @@ def main():
                                 # Display metrics and analysis
                                 display_metrics(price_data, forecast, asset_type, symbol)
                                 
-                                if impact_metrics:
+                                # Display sentiment impact if available
+                                if impact_metrics and forecast_type == "Price + Market Sentiment":
                                     st.subheader("🎭 Sentiment Impact Analysis")
                                     col1, col2, col3 = st.columns(3)
                                     
@@ -172,7 +187,9 @@ def main():
                                         )
                                 
                                 # Create and display forecast plot
-                                fig = create_forecast_plot(price_data, forecast, "Enhanced Prophet", symbol)
+                                fig = create_forecast_plot(price_data, forecast, 
+                                                         "Enhanced Prophet" if forecast_type == "Price + Market Sentiment" else "Prophet", 
+                                                         symbol)
                                 st.plotly_chart(fig, use_container_width=True)
                                 
                                 with st.expander("View Detailed Forecast Data"):
