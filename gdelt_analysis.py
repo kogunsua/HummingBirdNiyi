@@ -7,6 +7,7 @@ import logging
 from typing import Optional, Tuple, Dict
 import streamlit as st
 import plotly.graph_objects as go
+from io import StringIO
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class GDELTAnalyzer:
                 logger.error(f"GDELT API request failed with status {response.status_code}")
                 return None
             
-            df = pd.read_csv(pd.compat.StringIO(response.text), sep='\t')
+            df = pd.read_csv(StringIO(response.text), sep='\t')
             return self._process_sentiment_data(df)
         except Exception as e:
             logger.error(f"Error fetching GDELT data: {str(e)}")
