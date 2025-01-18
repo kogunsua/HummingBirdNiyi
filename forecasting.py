@@ -1,5 +1,4 @@
-#forecasting.py
-#working expect stock
+# forecasting.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,8 +13,8 @@ from asset_config import AssetConfig
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
-    """Prepare data for Prophet model"""
+def prepare_data_for_prophet(data: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
+    """Prepare data for Prophet model with asset-specific handling"""
     try:
         logger.info("Starting data preparation for Prophet")
         logger.info(f"Input data shape: {data.shape}")
@@ -24,38 +23,50 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
         # Make a copy of the data
         df = data.copy()
 
-        # If the DataFrame has a DatetimeIndex, reset it to a column
-        if isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            df.rename(columns={'index': 'ds'}, inplace=True)
-
-        # If 'Close' column exists, use it as 'y'
-        if 'Close' in df.columns:
-            if 'ds' not in df.columns:  # If we haven't set 'ds' from the index
-                date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
-                if date_cols:
-                    df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
-                else:
-                    df['ds'] = df.index
-
-            df['y'] = df['Close']
+        if asset_type.lower() == 'stocks':
+            # Stock-specific preprocessing
+            if isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                df.rename(columns={'index': 'ds'}, inplace=True)
+            elif 'Date' in df.columns:
+                df = df.rename(columns={'Date': 'ds'})
+            elif 'timestamp' in df.columns:
+                df = df.rename(columns={'timestamp': 'ds'})
+            
+            # Ensure Close price is named 'y' for Prophet
+            df = df.rename(columns={'Close': 'y'})
+            
+            # Ensure datetime is timezone naive
+            df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
+            
+            # Select only required columns
+            df = df[['ds', 'y']]
         else:
-            # If no 'Close' column, use the first numeric column as 'y'
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) > 0:
+            # Existing crypto preprocessing logic
+            if isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                df.rename(columns={'index': 'ds'}, inplace=True)
+
+            if 'Close' in df.columns:
                 if 'ds' not in df.columns:
-                    df['ds'] = df.index
-                df['y'] = df[numeric_cols[0]]
+                    date_cols = [col for col in df.columns if isinstance(col, str) and col.lower() in ['date', 'timestamp', 'time']]
+                    if date_cols:
+                        df.rename(columns={date_cols[0]: 'ds'}, inplace=True)
+                    else:
+                        df['ds'] = df.index
 
-        # Ensure 'ds' is datetime
+                df['y'] = df['Close']
+            else:
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    if 'ds' not in df.columns:
+                        df['ds'] = df.index
+                    df['y'] = df[numeric_cols[0]]
+
+        # Common preprocessing steps
         df['ds'] = pd.to_datetime(df['ds'])
-
-        # Ensure 'y' is float
         df['y'] = df['y'].astype(float)
-
-        # Select only required columns and sort by date
         prophet_df = df[['ds', 'y']].sort_values('ds').reset_index(drop=True)
-        # Drop NaN values
         prophet_df = prophet_df.dropna()
 
         logger.info(f"Prepared Prophet DataFrame shape: {prophet_df.shape}")
@@ -67,7 +78,7 @@ def prepare_data_for_prophet(data: pd.DataFrame) -> pd.DataFrame:
     except Exception as e:
         logger.error(f"Error in prepare_data_for_prophet: {str(e)}")
         raise Exception(f"Failed to prepare data for Prophet: {str(e)}")
-
+        
 def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Add cryptocurrency-specific indicators"""
     try:
@@ -90,6 +101,35 @@ def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
         
     except Exception as e:
         logger.error(f"Error adding crypto indicators: {str(e)}")
+        return df
+
+def add_stock_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Add stock-specific indicators"""
+    try:
+        # Volume Analysis
+        df['volume_ma'] = df['Volume'].rolling(window=20).mean()
+        df['volume_ratio'] = df['Volume'] / df['volume_ma']
+        
+        # Price Momentum
+        df['momentum'] = df['Close'].pct_change(periods=20)
+        
+        # Bollinger Bands
+        df['BB_middle'] = df['Close'].rolling(window=20).mean()
+        df['BB_upper'] = df['BB_middle'] + (df['Close'].rolling(window=20).std() * 2)
+        df['BB_lower'] = df['BB_middle'] - (df['Close'].rolling(window=20).std() * 2)
+        
+        # Average True Range (ATR)
+        high_low = df['High'] - df['Low']
+        high_close = (df['High'] - df['Close'].shift()).abs()
+        low_close = (df['Low'] - df['Close'].shift()).abs()
+        ranges = pd.concat([high_low, high_close, low_close], axis=1)
+        true_range = ranges.max(axis=1)
+        df['ATR'] = true_range.rolling(window=14).mean()
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error adding stock indicators: {str(e)}")
         return df
 
 def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd.DataFrame:
@@ -118,46 +158,79 @@ def add_technical_indicators(df: pd.DataFrame, asset_type: str = 'stocks') -> pd
         df['MACD'] = exp1 - exp2
         df['Signal_Line'] = df['MACD'].ewm(span=signal, adjust=False).mean()
         
+        # Add asset-specific indicators
         if asset_type.lower() == 'crypto':
             df = add_crypto_specific_indicators(df)
+        else:
+            df = add_stock_specific_indicators(df)
             
         return df
         
     except Exception as e:
         logger.error(f"Error in add_technical_indicators: {str(e)}")
         return df
-
+        
 def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[pd.DataFrame] = None,
                      indicator: Optional[str] = None, asset_type: str = 'stocks') -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Generate forecast using Prophet model"""
+    """Generate forecast using Prophet model with asset-specific handling"""
     try:
         if data is None or data.empty:
             return None, "No data provided for forecasting"
 
-        # Prepare data for Prophet
-        prophet_df = prepare_data_for_prophet(data)
+        # Prepare data for Prophet with asset-specific handling
+        prophet_df = prepare_data_for_prophet(data, asset_type)
         
         if prophet_df is None or prophet_df.empty:
             return None, "No valid data for forecasting after preparation"
 
-        # Initialize Prophet with parameters
-        model = Prophet(
-            changepoint_prior_scale=0.05,
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False
-        )
+        # Initialize Prophet with asset-specific parameters
+        if asset_type.lower() == 'stocks':
+            model = Prophet(
+                changepoint_prior_scale=0.05,
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=True
+            )
+            
+            # Add stock-specific seasonality
+            model.add_seasonality(
+                name='quarterly',
+                period=91.25,
+                fourier_order=5
+            )
+        else:
+            # Crypto-specific parameters
+            model = Prophet(
+                changepoint_prior_scale=0.05,
+                yearly_seasonality=True,
+                weekly_seasonality=True,
+                daily_seasonality=False
+            )
+            
+            # Add crypto-specific seasonality
+            model.add_seasonality(
+                name='monthly',
+                period=30.5,
+                fourier_order=5
+            )
 
-        # Add monthly seasonality
-        model.add_seasonality(
-            name='monthly',
-            period=30.5,
-            fourier_order=5
-        )
+        # Add economic indicators if provided
+        if economic_data is not None and indicator is not None:
+            economic_df = economic_data.copy()
+            economic_df.columns = ['ds', 'regressor']
+            economic_df['ds'] = pd.to_datetime(economic_df['ds']).dt.tz_localize(None)
+            model.add_regressor('regressor')
+            prophet_df = prophet_df.merge(economic_df, on='ds', how='left')
+            prophet_df['regressor'].fillna(method='ffill', inplace=True)
 
         # Fit model and make forecast
         model.fit(prophet_df)
         future = model.make_future_dataframe(periods=periods)
+        
+        if economic_data is not None and indicator is not None:
+            future = future.merge(economic_df, on='ds', how='left')
+            future['regressor'].fillna(method='ffill', inplace=True)
+            
         forecast = model.predict(future)
         forecast['actual'] = np.nan
         forecast.loc[forecast['ds'].isin(prophet_df['ds']), 'actual'] = prophet_df['y'].values
@@ -167,14 +240,22 @@ def prophet_forecast(data: pd.DataFrame, periods: int, economic_data: Optional[p
     except Exception as e:
         logger.error(f"Error in prophet_forecast: {str(e)}")
         return None, str(e)
-
-def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str) -> go.Figure:
+        
+def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name: str, symbol: str, asset_type: str = 'stocks') -> go.Figure:
     """Create an interactive plot with historical data and forecast"""
     try:
-        # Create figure
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
-                           vertical_spacing=0.03, row_heights=[0.7, 0.3],
-                           subplot_titles=(f'{symbol} Price Forecast', 'Confidence Analysis'))
+        # Create figure with secondary y-axis for volume
+        fig = make_subplots(
+            rows=3, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.5, 0.25, 0.25],
+            subplot_titles=(
+                f'{symbol} Price Forecast',
+                'Volume Analysis',
+                'Technical Indicators'
+            )
+        )
 
         # Add historical data
         if isinstance(data.index, pd.DatetimeIndex):
@@ -182,6 +263,7 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
         else:
             historical_dates = pd.to_datetime(data.index)
             
+        # Price data
         fig.add_trace(
             go.Scatter(
                 x=historical_dates,
@@ -192,7 +274,7 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             row=1, col=1
         )
 
-        # Add forecast line
+        # Forecast line
         fig.add_trace(
             go.Scatter(
                 x=forecast['ds'],
@@ -203,7 +285,7 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             row=1, col=1
         )
 
-        # Add confidence intervals
+        # Confidence intervals
         fig.add_trace(
             go.Scatter(
                 x=pd.concat([forecast['ds'], forecast['ds'][::-1]]),
@@ -216,11 +298,77 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
             row=1, col=1
         )
 
+        # Volume
+        if 'Volume' in data.columns:
+            fig.add_trace(
+                go.Bar(
+                    x=historical_dates,
+                    y=data['Volume'],
+                    name='Volume',
+                    marker_color='lightgray'
+                ),
+                row=2, col=1
+            )
+
+        # Add technical indicators
+        if asset_type.lower() == 'stocks':
+            # Bollinger Bands
+            if 'BB_middle' in data.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=historical_dates,
+                        y=data['BB_middle'],
+                        name='BB Middle',
+                        line=dict(color='gray', dash='dash')
+                    ),
+                    row=3, col=1
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=historical_dates,
+                        y=data['BB_upper'],
+                        name='BB Upper',
+                        line=dict(color='lightgray')
+                    ),
+                    row=3, col=1
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=historical_dates,
+                        y=data['BB_lower'],
+                        name='BB Lower',
+                        line=dict(color='lightgray')
+                    ),
+                    row=3, col=1
+                )
+        else:
+            # Crypto-specific indicators
+            if 'hourly_volatility' in data.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=historical_dates,
+                        y=data['hourly_volatility'],
+                        name='Hourly Volatility',
+                        line=dict(color='orange')
+                    ),
+                    row=3, col=1
+                )
+
         # Update layout
         fig.update_layout(
-            title=f'{symbol} Price Forecast',
+            title=f'{symbol} Price Forecast and Analysis',
             yaxis_title='Price ($)',
-            height=800
+            yaxis2_title='Volume',
+            yaxis3_title='Indicators',
+            height=1000,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
         )
 
         return fig
@@ -228,6 +376,47 @@ def create_forecast_plot(data: pd.DataFrame, forecast: pd.DataFrame, model_name:
     except Exception as e:
         logger.error(f"Error creating forecast plot: {str(e)}")
         return None
+        
+def display_stock_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
+    """Display stock-specific metrics"""
+    try:
+        st.subheader("📈 Stock Market Metrics")
+
+        # Stock-specific metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if 'ATR' in data.columns:
+                atr = float(data['ATR'].iloc[-1])
+                atr_change = float(data['ATR'].pct_change().iloc[-1] * 100)
+                st.metric(
+                    "Average True Range",
+                    f"${atr:.2f}",
+                    f"{atr_change:+.2f}%"
+                )
+
+        with col2:
+            if 'BB_middle' in data.columns:
+                current_price = float(data['Close'].iloc[-1])
+                bb_mid = float(data['BB_middle'].iloc[-1])
+                bb_position = ((current_price - bb_mid) / bb_mid) * 100
+                st.metric(
+                    "BB Position",
+                    f"{bb_position:+.2f}%",
+                    "Above Middle" if bb_position > 0 else "Below Middle"
+                )
+
+        with col3:
+            if 'momentum' in data.columns:
+                momentum = float(data['momentum'].iloc[-1] * 100)
+                st.metric(
+                    "Price Momentum",
+                    f"{momentum:+.2f}%"
+                )
+
+    except Exception as e:
+        logger.error(f"Error displaying stock metrics: {str(e)}")
+        st.error(f"Error displaying stock metrics: {str(e)}")
 
 def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
     """Display common metrics for both stocks and cryptocurrencies"""
@@ -321,15 +510,10 @@ def display_common_metrics(data: pd.DataFrame, forecast: pd.DataFrame):
                 lower_bound = float(forecast['yhat_lower'].iloc[-1])
                 st.metric("Lower Bound", f"${lower_bound:,.2f}")
 
-        # Log successful calculations
-        logger.info(f"Metrics calculated successfully: Current=${current_price:.2f}, Forecast=${next_day_forecast:.2f}")
-
     except Exception as e:
         logger.error(f"Error displaying common metrics: {str(e)}")
         st.error(f"Error displaying common metrics: {str(e)}")
-        logger.error(f"Data shape: {data.shape}")
-        logger.error(f"Close column type: {type(data['Close'])}")
-
+        
 def display_confidence_analysis(forecast: pd.DataFrame):
     """Display confidence analysis of the forecast"""
     try:
@@ -358,105 +542,13 @@ def display_confidence_analysis(forecast: pd.DataFrame):
         logger.error(f"Error displaying confidence analysis: {str(e)}")
         st.error(f"Error displaying confidence analysis: {str(e)}")
 
-def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
-    """Display cryptocurrency-specific metrics with forecast integration"""
-    try:
-        st.subheader("🪙 Cryptocurrency Metrics")
-
-        if 'Volume' in data.columns:
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                volume = float(data['Volume'].iloc[-1])
-                volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
-                st.metric(
-                    "24h Volume",
-                    f"${volume:,.0f}",
-                    f"{volume_change:+.2f}%"
-                )
-
-            with col2:
-                if 'volume_ratio' in data.columns:
-                    vol_ratio = float(data['volume_ratio'].iloc[-1])
-                    st.metric(
-                        "Volume Ratio",
-                        f"{vol_ratio:.2f}",
-                        "Above Average" if vol_ratio > 1 else "Below Average"
-                    )
-            
-            with col3:
-                if forecast is not None:
-                    price_volatility = ((forecast['yhat_upper'].iloc[-1] - forecast['yhat_lower'].iloc[-1]) 
-                                     / forecast['yhat'].iloc[-1] * 100)
-                    st.metric(
-                        "Forecast Volatility",
-                        f"{price_volatility:.2f}%"
-                    )
-
-    except Exception as e:
-        logger.error(f"Error displaying crypto metrics: {str(e)}")
-        st.error(f"Error displaying crypto metrics: {str(e)}")
-        
-        # Log the shape and types of data for debugging
-        logger.error(f"Data shape: {data.shape}")
-        logger.error(f"Close column type: {type(data['Close'])}")
-        logger.error(f"Close column info: {data['Close'].info()}")
-
-def display_confidence_analysis(forecast: pd.DataFrame):
-    """Display confidence analysis of the forecast"""
-    try:
-        st.subheader("📊 Confidence Analysis")
-
-        # Calculate confidence metrics
-        confidence_width = (forecast['yhat_upper'] - forecast['yhat_lower']) / forecast['yhat'] * 100
-        avg_confidence = 100 - confidence_width.mean()
-        total_trend = ((forecast['yhat'].iloc[-1] / forecast['yhat'].iloc[0]) - 1) * 100
-        
-        # Display metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Average Confidence", f"{avg_confidence:.1f}%")
-        with col2:
-            st.metric("Overall Trend", f"{total_trend:+.1f}%")
-
-    except Exception as e:
-        logger.error(f"Error displaying confidence analysis: {str(e)}")
-        st.error(f"Error displaying confidence analysis: {str(e)}")
-
-def display_crypto_metrics(data: pd.DataFrame, forecast: pd.DataFrame, symbol: str):
-    """Display cryptocurrency-specific metrics"""
-    try:
-        st.subheader("🪙 Cryptocurrency Metrics")
-
-        if 'Volume' in data.columns:
-            col1, col2 = st.columns(2)
-            with col1:
-                volume = float(data['Volume'].iloc[-1])
-                volume_change = float(data['Volume'].pct_change().iloc[-1] * 100)
-                st.metric(
-                    "24h Volume",
-                    f"${volume:,.0f}",
-                    f"{volume_change:+.2f}%"
-                )
-
-            with col2:
-                if 'volume_ratio' in data.columns:
-                    vol_ratio = float(data['volume_ratio'].iloc[-1])
-                    st.metric(
-                        "Volume Ratio",
-                        f"{vol_ratio:.2f}",
-                        "Above Average" if vol_ratio > 1 else "Below Average"
-                    )
-
-    except Exception as e:
-        logger.error(f"Error displaying crypto metrics: {str(e)}")
-        st.error(f"Error displaying crypto metrics: {str(e)}")
-
 def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str, symbol: str):
-    """Display all metrics"""
+    """Display all metrics based on asset type"""
     try:
         display_common_metrics(data, forecast)
-        if asset_type.lower() == 'crypto':
+        if asset_type.lower() == 'stocks':
+            display_stock_metrics(data, forecast, symbol)
+        else:
             display_crypto_metrics(data, forecast, symbol)
         display_confidence_analysis(forecast)
 
@@ -467,16 +559,38 @@ def display_metrics(data: pd.DataFrame, forecast: pd.DataFrame, asset_type: str,
 def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_indicators: object):
     """Display economic indicator information and analysis"""
     try:
+        if data is None or indicator is None:
+            return
+            
         st.subheader("📊 Economic Indicator Analysis")
         
         indicator_info = economic_indicators.get_indicator_info(indicator)
-        
+        if not indicator_info:
+            return
+            
+        # Display indicator metadata
         st.markdown(f"""
             **Indicator:** {indicator_info.get('description', indicator)}  
             **Frequency:** {indicator_info.get('frequency', 'N/A')}  
             **Units:** {indicator_info.get('units', 'N/A')}
         """)
+        
+        # Calculate and display current statistics
+        if not data.empty:
+            current_value = data['value'].iloc[-1]
+            change_1d = (data['value'].iloc[-1] / data['value'].iloc[-2] - 1) * 100 if len(data) > 1 else 0
+            change_30d = (data['value'].iloc[-1] / data['value'].iloc[-30] - 1) * 100 if len(data) >= 30 else None
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Current Value", f"{current_value:.2f}")
+            with col2:
+                st.metric("24h Change", f"{change_1d:+.2f}%")
+            with col3:
+                if change_30d is not None:
+                    st.metric("30d Change", f"{change_30d:+.2f}%")
 
     except Exception as e:
         logger.error(f"Error displaying economic indicators: {str(e)}")
         st.error(f"Error displaying economic indicators: {str(e)}")
+        
