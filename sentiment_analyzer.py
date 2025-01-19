@@ -1,4 +1,3 @@
-#sentiment_analyzer.py
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -292,8 +291,8 @@ class MultiSourceSentimentAnalyzer:
         except Exception as e:
             logger.error(f"Error in fetch_combined_sentiment: {str(e)}")
             return None
-            
-def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+
+    def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch and analyze sentiment from Yahoo Finance news"""
         try:
             logger.info(f"Fetching Yahoo Finance sentiment for {symbol} from {start_date} to {end_date}")
@@ -660,7 +659,8 @@ def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentime
         logger.error(f"Error in multi-source sentiment integration: {str(e)}")
         st.error(f"Error in sentiment analysis: {str(e)}")
         return None
-        
+
+# Define exports
 __all__ = [
     'MultiSourceSentimentAnalyzer',
     'integrate_multi_source_sentiment',
