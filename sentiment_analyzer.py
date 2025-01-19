@@ -660,3 +660,11 @@ def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentime
         logger.error(f"Error in multi-source sentiment integration: {str(e)}")
         st.error(f"Error in sentiment analysis: {str(e)}")
         return None
+        
+__all__ = [
+    'MultiSourceSentimentAnalyzer',
+    'integrate_multi_source_sentiment',
+    'display_sentiment_impact_analysis',
+    'display_sentiment_impact_results',
+    'get_sentiment_data'
+]
