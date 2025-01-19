@@ -1,3 +1,4 @@
+#sentiment_analyzer.py
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -152,7 +153,7 @@ def display_sentiment_impact_results(impact_metrics: dict):
             else "Low price sensitivity to sentiment"
            }
         """)
-
+        
 def get_sentiment_data(analyzer, symbol: str, start_date: str, end_date: str, sentiment_source: str) -> Optional[pd.DataFrame]:
     """Get sentiment data from specified source"""
     try:
@@ -203,29 +204,7 @@ def get_sentiment_data(analyzer, symbol: str, start_date: str, end_date: str, se
         logger.error(f"Error getting sentiment data: {str(e)}")
         st.error(f"Error getting sentiment data from {sentiment_source}: {str(e)}")
         return None
-            
-        # Construct the full method name
-        method_name = f"fetch_{method_name}_sentiment"
-        logger.info(f"Using sentiment method: {method_name}")
-        
-        # Get the method and call it
-        sentiment_method = getattr(analyzer, method_name, None)
-        if sentiment_method is None:
-            logger.error(f"Method {method_name} not found in analyzer")
-            st.error(f"Method {method_name} not found in analyzer")
-            return None
-            
-        sentiment_data = sentiment_method(symbol, start_date, end_date)
-        if sentiment_data is None or sentiment_data.empty:
-            logger.warning(f"No sentiment data available from {sentiment_source}")
-            return None
-            
-        return sentiment_data
-        
-    except Exception as e:
-        logger.error(f"Error getting sentiment data: {str(e)}")
-        st.error(f"Error getting sentiment data: {str(e)}")
-        return None
+
 
 class MultiSourceSentimentAnalyzer:
     def __init__(self):
@@ -241,7 +220,7 @@ class MultiSourceSentimentAnalyzer:
         self.newsapi_key = "pub_65773c625d48ffecc8522ad52fe0fd7199cce"  # Get from https://newsapi.org/
         self.finnhub_key = "cpllsnpr01qn8g1v08hgcpllsnpr01qn8g1v08i0"   # Get from https://finnhub.io/
 
-def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+    def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch sentiment data from multiple sources"""
         try:
             logger.info(f"Fetching combined sentiment for {symbol} from {start_date} to {end_date}")
@@ -313,6 +292,183 @@ def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) 
         except Exception as e:
             logger.error(f"Error in fetch_combined_sentiment: {str(e)}")
             return None
+            
+def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch and analyze sentiment from Yahoo Finance news"""
+        try:
+            logger.info(f"Fetching Yahoo Finance sentiment for {symbol} from {start_date} to {end_date}")
+            
+            # Convert dates to datetime objects for comparison
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            # Get stock/asset info
+            ticker = yf.Ticker(symbol)
+            
+            # Fetch news with error handling
+            try:
+                news = ticker.news
+                if not news:
+                    logger.warning(f"No news found for {symbol}")
+                    return None
+            except Exception as e:
+                logger.error(f"Error fetching news from Yahoo Finance: {str(e)}")
+                return None
+
+            sentiment_data = []
+            for article in news:
+                try:
+                    # Get article date with error handling
+                    try:
+                        date = datetime.fromtimestamp(article['providerPublishTime'])
+                    except (KeyError, TypeError) as e:
+                        logger.warning(f"Invalid date format in article: {str(e)}")
+                        continue
+                    
+                    # Only include articles within the date range
+                    if not (start_dt <= date <= end_dt):
+                        continue
+                    
+                    # Extract title and description with error handling
+                    title = article.get('title', '')
+                    description = article.get('description', '')
+                    
+                    if not title and not description:
+                        continue
+                    
+                    # Analyze sentiment using both VADER and TextBlob
+                    title_body = f"{title} {description}"
+                    
+                    # VADER sentiment
+                    vader_scores = self.sia.polarity_scores(title_body)
+                    
+                    # TextBlob sentiment
+                    blob_sentiment = TextBlob(title_body).sentiment
+                    
+                    # Combine sentiment scores
+                    sentiment_score = (vader_scores['compound'] + blob_sentiment.polarity) / 2
+                    
+                    sentiment_data.append({
+                        'ds': date,
+                        'sentiment_score': (sentiment_score + 1) / 2,  # Normalize to 0-1
+                        'source': 'yahoo',
+                        'confidence': abs(blob_sentiment.subjectivity)
+                    })
+                except Exception as e:
+                    logger.warning(f"Error processing Yahoo article: {str(e)}")
+                    continue
+
+            if sentiment_data:
+                df = pd.DataFrame(sentiment_data)
+                logger.info(f"Successfully processed {len(df)} articles from Yahoo Finance")
+                return df
+            
+            logger.warning("No valid sentiment data found from Yahoo Finance")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching Yahoo sentiment: {str(e)}")
+            return None
+
+    def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch and analyze sentiment from News API"""
+        try:
+            logger.info(f"Fetching News API sentiment for {symbol} from {start_date} to {end_date}")
+            newsapi = NewsApiClient(api_key=self.newsapi_key)
+            
+            # Get news articles
+            articles = newsapi.get_everything(
+                q=symbol,
+                from_param=start_date,
+                to=end_date,
+                language='en',
+                sort_by='publishedAt'
+            )
+
+            if not articles['articles']:
+                logger.warning("No articles found from News API")
+                return None
+
+            sentiment_data = []
+            for article in articles['articles']:
+                try:
+                    # Combine title and description
+                    text = f"{article['title']} {article.get('description', '')}"
+                    
+                    # Get both VADER and TextBlob sentiment
+                    vader_scores = self.sia.polarity_scores(text)
+                    blob_sentiment = TextBlob(text).sentiment
+                    
+                    # Combine scores
+                    sentiment_score = (vader_scores['compound'] + blob_sentiment.polarity) / 2
+                    
+                    sentiment_data.append({
+                        'ds': pd.to_datetime(article['publishedAt']),
+                        'sentiment_score': (sentiment_score + 1) / 2,
+                        'source': 'newsapi',
+                        'confidence': abs(blob_sentiment.subjectivity)
+                    })
+                except Exception as e:
+                    logger.warning(f"Error processing NewsAPI article: {str(e)}")
+                    continue
+
+            if sentiment_data:
+                df = pd.DataFrame(sentiment_data)
+                logger.info(f"Successfully processed {len(df)} articles from News API")
+                return df
+            
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching NewsAPI sentiment: {str(e)}")
+            return None
+
+    def fetch_finnhub_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch sentiment data from Finnhub"""
+        try:
+            logger.info(f"Fetching Finnhub sentiment for {symbol} from {start_date} to {end_date}")
+            base_url = "https://finnhub.io/api/v1"
+            headers = {'X-Finnhub-Token': self.finnhub_key}
+            
+            # Convert dates to timestamps
+            start_timestamp = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+            end_timestamp = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            
+            # Fetch sentiment data
+            url = f"{base_url}/news-sentiment?symbol={symbol}"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                logger.warning(f"Failed to fetch data from Finnhub. Status code: {response.status_code}")
+                return None
+
+            data = response.json()
+            if not data or not data.get('data'):
+                logger.warning("No data received from Finnhub")
+                return None
+
+            # Create DataFrame from sentiment data
+            sentiment_data = []
+            for news in data.get('data', []):
+                if start_timestamp <= news['datetime'] <= end_timestamp:
+                    sentiment_data.append({
+                        'ds': pd.to_datetime(news['datetime'], unit='s'),
+                        'sentiment_score': news['sentiment'],
+                        'source': 'finnhub',
+                        'confidence': news.get('confidence', 0.5)
+                    })
+
+            if sentiment_data:
+                df = pd.DataFrame(sentiment_data)
+                logger.info(f"Successfully processed {len(df)} articles from Finnhub")
+                return df
+            
+            logger.warning("No valid sentiment data found in the specified date range")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching Finnhub sentiment: {str(e)}")
+            return None
 
     def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
         """Process and combine sentiment data from multiple sources"""
@@ -342,176 +498,11 @@ def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) 
         except Exception as e:
             logger.error(f"Error processing combined sentiment: {str(e)}")
             return pd.DataFrame()
-
-    def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch and analyze sentiment from Yahoo Finance news"""
-        try:
-            logger.info(f"Fetching Yahoo Finance sentiment for {symbol} from {start_date} to {end_date}")
-            # Get stock/asset info
-            ticker = yf.Ticker(symbol)
             
-            # Fetch news
-            news = ticker.news
-            if not news:
-                return None
-
-            sentiment_data = []
-            for article in news:
-                try:
-                    # Get article date
-                    date = datetime.fromtimestamp(article['providerPublishTime'])
-                    
-                    # Only include articles within the date range
-                    if not (start_date <= date.strftime("%Y-%m-%d") <= end_date):
-                        continue
-                    
-                    # Analyze sentiment using both VADER and TextBlob
-                    title_body = f"{article['title']} {article.get('description', '')}"
-                    
-                    # VADER sentiment
-                    vader_scores = self.sia.polarity_scores(title_body)
-                    
-                    # TextBlob sentiment
-                    blob_sentiment = TextBlob(title_body).sentiment
-                    
-                    # Combine sentiment scores
-                    sentiment_score = (vader_scores['compound'] + blob_sentiment.polarity) / 2
-                    
-                    sentiment_data.append({
-                        'ds': date,
-                        'sentiment_score': (sentiment_score + 1) / 2,  # Normalize to 0-1
-                        'source': 'yahoo',
-                        'confidence': abs(blob_sentiment.subjectivity)
-                    })
-                except Exception as e:
-                    logger.warning(f"Error processing Yahoo article: {str(e)}")
-                    continue
-
-            if sentiment_data:
-                return pd.DataFrame(sentiment_data)
-            return None
-
-        except Exception as e:
-            logger.error(f"Error fetching Yahoo sentiment: {str(e)}")
-            return None
-
-    def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch and analyze sentiment from News API"""
-        try:
-            logger.info(f"Fetching News API sentiment for {symbol} from {start_date} to {end_date}")
-            newsapi = NewsApiClient(api_key=self.newsapi_key)
-            
-            # Get news articles
-            articles = newsapi.get_everything(
-                q=symbol,
-                from_param=start_date,
-                to=end_date,
-                language='en',
-                sort_by='publishedAt'
-            )
-
-            if not articles['articles']:
-                return None
-
-            sentiment_data = []
-            for article in articles['articles']:
-                try:
-                    # Combine title and description
-                    text = f"{article['title']} {article.get('description', '')}"
-                    
-                    # Get both VADER and TextBlob sentiment
-                    vader_scores = self.sia.polarity_scores(text)
-                    blob_sentiment = TextBlob(text).sentiment
-                    
-                    # Combine scores
-                    sentiment_score = (vader_scores['compound'] + blob_sentiment.polarity) / 2
-                    
-                    sentiment_data.append({
-                        'ds': pd.to_datetime(article['publishedAt']),
-                        'sentiment_score': (sentiment_score + 1) / 2,
-                        'source': 'newsapi',
-                        'confidence': abs(blob_sentiment.subjectivity)
-                    })
-                except Exception as e:
-                    logger.warning(f"Error processing NewsAPI article: {str(e)}")
-                    continue
-
-            if sentiment_data:
-                return pd.DataFrame(sentiment_data)
-            return None
-
-        except Exception as e:
-            logger.error(f"Error fetching NewsAPI sentiment: {str(e)}")
-            return None
-
-    def fetch_finnhub_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch sentiment data from Finnhub"""
-        try:
-            logger.info(f"Fetching Finnhub sentiment for {symbol} from {start_date} to {end_date}")
-            base_url = "https://finnhub.io/api/v1"
-            headers = {'X-Finnhub-Token': self.finnhub_key}
-            
-            # Convert dates to timestamps
-            start_timestamp = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-            end_timestamp = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
-            
-            # Fetch sentiment data
-            url = f"{base_url}/news-sentiment?symbol={symbol}"
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                return None
-
-            data = response.json()
-            if not data:
-                return None
-
-            # Create DataFrame from sentiment data
-            sentiment_data = []
-            for news in data.get('data', []):
-                if start_timestamp <= news['datetime'] <= end_timestamp:
-                    sentiment_data.append({
-                        'ds': pd.to_datetime(news['datetime'], unit='s'),
-                        'sentiment_score': news['sentiment'],
-                        'source': 'finnhub',
-                        'confidence': news.get('confidence', 0.5)
-                    })
-
-            if sentiment_data:
-                return pd.DataFrame(sentiment_data)
-            return None
-
-        except Exception as e:
-            logger.error(f"Error fetching Finnhub sentiment: {str(e)}")
-            return None
-
-    def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process and combine sentiment data from multiple sources"""
-        
-
-def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Process and combine sentiment data from multiple sources"""
-        try:
-            # Group by date and calculate weighted average sentiment
-            daily_sentiment = df.groupby('ds').agg({
-                'sentiment_score': lambda x: np.average(x, weights=df.loc[x.index, 'confidence']),
-                'confidence': 'mean'
-            }).reset_index()
-
-            # Calculate additional metrics
-            daily_sentiment['tone_avg'] = (daily_sentiment['sentiment_score'] - 0.5) * 200
-            daily_sentiment['tone_std'] = df.groupby(df['ds'].dt.date)['sentiment_score'].transform('std')
-            daily_sentiment['article_count'] = df.groupby(df['ds'].dt.date)['sentiment_score'].transform('count')
-
-            return daily_sentiment.sort_values('ds')
-
-        except Exception as e:
-            logger.error(f"Error processing combined sentiment: {str(e)}")
-            raise
-
 def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentiment_weight: float = 0.5) -> Optional[pd.DataFrame]:
     """Integrate multi-source sentiment analysis"""
     try:
+        logger.info(f"Starting sentiment analysis for {symbol} over {sentiment_period} days")
         analyzer = MultiSourceSentimentAnalyzer()
         
         start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
@@ -521,9 +512,11 @@ def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentime
             sentiment_data = analyzer.fetch_combined_sentiment(symbol, start_date, end_date)
         
         if sentiment_data is None or sentiment_data.empty:
+            logger.warning(f"No sentiment data available for {symbol}")
             st.warning("No sentiment data available from any source. Using price-only forecast.")
             return None
         
+        logger.info(f"Successfully fetched sentiment data for {symbol}")
         st.success("Successfully fetched sentiment data!")
         
         # Calculate impact metrics
@@ -533,8 +526,18 @@ def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentime
             impact_metrics['sentiment_correlation'] = sentiment_data['sentiment_score'].autocorr()
             impact_metrics['sentiment_volatility'] = sentiment_data['sentiment_score'].std()
             impact_metrics['price_sensitivity'] = sentiment_weight
+            
+            logger.info(f"Calculated sentiment impact metrics: correlation={impact_metrics['sentiment_correlation']:.2f}, "
+                       f"volatility={impact_metrics['sentiment_volatility']:.2f}, "
+                       f"sensitivity={impact_metrics['price_sensitivity']:.2f}")
+            
         except Exception as e:
             logger.warning(f"Error calculating impact metrics: {str(e)}")
+            impact_metrics = {
+                'sentiment_correlation': 0.0,
+                'sentiment_volatility': 0.0,
+                'price_sensitivity': sentiment_weight
+            }
         
         # Display sentiment analysis
         st.markdown("### 📊 Multi-Source Market Sentiment Analysis")
@@ -547,45 +550,110 @@ def integrate_multi_source_sentiment(symbol: str, sentiment_period: int, sentime
             st.metric(
                 "Current Sentiment",
                 f"{current_sentiment:.2f}",
-                f"{sentiment_change:+.2f}"
+                f"{sentiment_change:+.2f}",
+                help="Latest sentiment score and change from previous period"
             )
         
         with col2:
+            avg_sentiment = sentiment_data['sentiment_score'].mean()
             st.metric(
                 "Average Sentiment",
-                f"{sentiment_data['sentiment_score'].mean():.2f}"
+                f"{avg_sentiment:.2f}",
+                help="Mean sentiment score across the analysis period"
             )
         
         with col3:
+            conf_level = sentiment_data['confidence'].mean()
             st.metric(
                 "Confidence Level",
-                f"{sentiment_data['confidence'].mean():.2f}"
+                f"{conf_level:.2f}",
+                help="Average confidence in sentiment analysis"
             )
         
         # Create sentiment visualization
         fig = go.Figure()
+        
+        # Add main sentiment line
         fig.add_trace(
             go.Scatter(
                 x=sentiment_data['ds'],
                 y=sentiment_data['sentiment_score'],
                 name='Sentiment Score',
-                line=dict(color='purple')
+                line=dict(color='purple', width=2)
             )
         )
         
+        # Add confidence bands if available
+        if 'tone_std' in sentiment_data.columns:
+            # Upper and lower bands based on tone standard deviation
+            upper_band = sentiment_data['sentiment_score'] + sentiment_data['tone_std']
+            lower_band = sentiment_data['sentiment_score'] - sentiment_data['tone_std']
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=sentiment_data['ds'].tolist() + sentiment_data['ds'].tolist()[::-1],
+                    y=upper_band.tolist() + lower_band.tolist()[::-1],
+                    fill='toself',
+                    fillcolor='rgba(128, 0, 128, 0.2)',
+                    line=dict(color='rgba(255,255,255,0)'),
+                    name='Confidence Band',
+                    showlegend=True
+                )
+            )
+        
         fig.update_layout(
-            title="Market Sentiment Trend (Multi-Source)",
+            title={
+                'text': "Market Sentiment Trend (Multi-Source)",
+                'y': 0.95,
+                'x': 0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'
+            },
             xaxis_title="Date",
             yaxis_title="Sentiment Score",
-            height=400
+            height=400,
+            hovermode='x unified',
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor='rgba(255, 255, 255, 0.8)'
+            ),
+            margin=dict(l=50, r=50, t=50, b=50)
         )
+        
+        # Add range slider
+        fig.update_xaxes(rangeslider_visible=True)
         
         st.plotly_chart(fig, use_container_width=True)
         
         # Display sentiment impact results if metrics are available
         if impact_metrics:
             display_sentiment_impact_results(impact_metrics)
+            
+            # Add metric details explanation
+            with st.expander("📈 Detailed Metrics Information"):
+                st.markdown(f"""
+                    ### Sentiment Analysis Details
+                    
+                    #### Coverage Statistics:
+                    - Total Days Analyzed: {len(sentiment_data)}
+                    - Average Daily Articles: {sentiment_data['article_count'].mean():.1f}
+                    - Data Completeness: {(len(sentiment_data) / sentiment_period * 100):.1f}%
+                    
+                    #### Sentiment Trends:
+                    - Highest Sentiment: {sentiment_data['sentiment_score'].max():.3f}
+                    - Lowest Sentiment: {sentiment_data['sentiment_score'].min():.3f}
+                    - Sentiment Volatility: {sentiment_data['sentiment_score'].std():.3f}
+                    
+                    #### Reliability Metrics:
+                    - Average Confidence: {sentiment_data['confidence'].mean():.3f}
+                    - Data Sources Used: Multiple
+                    - Update Frequency: Daily
+                """)
         
+        logger.info(f"Completed sentiment analysis for {symbol}")
         return sentiment_data
 
     except Exception as e:
