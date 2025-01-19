@@ -167,13 +167,42 @@ def get_sentiment_data(analyzer, symbol: str, start_date: str, end_date: str, se
         # Get the correct method name from the map
         if sentiment_source == "Multi-Source":
             logger.info("Using combined sentiment analysis")
-            return analyzer.fetch_combined_sentiment(symbol, start_date, end_date)
+            sentiment_data = analyzer.fetch_combined_sentiment(symbol, start_date, end_date)
+            if sentiment_data is None or sentiment_data.empty:
+                logger.warning("No data available from combined sources")
+                st.warning("No sentiment data available from combined sources")
+                return None
+            return sentiment_data
             
         method_name = source_method_map.get(sentiment_source.replace(" ", "_").lower())
         if not method_name:
             logger.error(f"Invalid sentiment source: {sentiment_source}")
             st.error(f"Invalid sentiment source: {sentiment_source}")
             return None
+            
+        # Construct the full method name
+        method_name = f"fetch_{method_name}_sentiment"
+        logger.info(f"Using sentiment method: {method_name}")
+        
+        # Get the method and call it
+        sentiment_method = getattr(analyzer, method_name, None)
+        if sentiment_method is None:
+            logger.error(f"Method {method_name} not found in analyzer")
+            st.error(f"Method {method_name} not found in analyzer")
+            return None
+            
+        sentiment_data = sentiment_method(symbol, start_date, end_date)
+        if sentiment_data is None or sentiment_data.empty:
+            logger.warning(f"No sentiment data available from {sentiment_source}")
+            st.warning(f"No sentiment data available from {sentiment_source}")
+            return None
+            
+        return sentiment_data
+        
+    except Exception as e:
+        logger.error(f"Error getting sentiment data: {str(e)}")
+        st.error(f"Error getting sentiment data from {sentiment_source}: {str(e)}")
+        return None
             
         # Construct the full method name
         method_name = f"fetch_{method_name}_sentiment"
@@ -212,38 +241,107 @@ class MultiSourceSentimentAnalyzer:
         self.newsapi_key = "pub_65773c625d48ffecc8522ad52fe0fd7199cce"  # Get from https://newsapi.org/
         self.finnhub_key = "cpllsnpr01qn8g1v08hgcpllsnpr01qn8g1v08i0"   # Get from https://finnhub.io/
 
-    def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch sentiment data from multiple sources"""
         try:
             logger.info(f"Fetching combined sentiment for {symbol} from {start_date} to {end_date}")
             sentiment_data = []
+            source_count = 0
             
             # 1. Try Yahoo Finance News Sentiment
-            yahoo_sentiment = self.fetch_yahoo_sentiment(symbol, start_date, end_date)
-            if yahoo_sentiment is not None:
-                sentiment_data.append(yahoo_sentiment)
+            try:
+                yahoo_sentiment = self.fetch_yahoo_sentiment(symbol, start_date, end_date)
+                if yahoo_sentiment is not None and not yahoo_sentiment.empty:
+                    sentiment_data.append(yahoo_sentiment)
+                    source_count += 1
+                    logger.info(f"Successfully fetched Yahoo Finance sentiment data: {len(yahoo_sentiment)} records")
+                else:
+                    logger.warning("No Yahoo Finance sentiment data available")
+            except Exception as e:
+                logger.warning(f"Error fetching Yahoo Finance sentiment: {str(e)}")
 
             # 2. Try News API
-            news_sentiment = self.fetch_newsapi_sentiment(symbol, start_date, end_date)
-            if news_sentiment is not None:
-                sentiment_data.append(news_sentiment)
+            try:
+                news_sentiment = self.fetch_newsapi_sentiment(symbol, start_date, end_date)
+                if news_sentiment is not None and not news_sentiment.empty:
+                    sentiment_data.append(news_sentiment)
+                    source_count += 1
+                    logger.info(f"Successfully fetched News API sentiment data: {len(news_sentiment)} records")
+                else:
+                    logger.warning("No News API sentiment data available")
+            except Exception as e:
+                logger.warning(f"Error fetching News API sentiment: {str(e)}")
 
-            # 3. Try Finnhub Sentiment (if available)
-            finnhub_sentiment = self.fetch_finnhub_sentiment(symbol, start_date, end_date)
-            if finnhub_sentiment is not None:
-                sentiment_data.append(finnhub_sentiment)
+            # 3. Try Finnhub Sentiment
+            try:
+                finnhub_sentiment = self.fetch_finnhub_sentiment(symbol, start_date, end_date)
+                if finnhub_sentiment is not None and not finnhub_sentiment.empty:
+                    sentiment_data.append(finnhub_sentiment)
+                    source_count += 1
+                    logger.info(f"Successfully fetched Finnhub sentiment data: {len(finnhub_sentiment)} records")
+                else:
+                    logger.warning("No Finnhub sentiment data available")
+            except Exception as e:
+                logger.warning(f"Error fetching Finnhub sentiment: {str(e)}")
 
-            # Combine all sentiment data
+            # Process combined sentiment data
             if sentiment_data:
-                combined_df = pd.concat(sentiment_data)
-                return self._process_combined_sentiment(combined_df)
+                logger.info(f"Successfully fetched data from {source_count} sources")
+                try:
+                    # Combine all data
+                    combined_df = pd.concat(sentiment_data, ignore_index=True)
+                    
+                    # Sort by date and remove duplicates if any
+                    combined_df = combined_df.sort_values('ds').drop_duplicates(subset=['ds'], keep='first')
+                    
+                    # Process the combined data
+                    processed_df = self._process_combined_sentiment(combined_df)
+                    
+                    if processed_df is not None and not processed_df.empty:
+                        logger.info(f"Successfully processed combined sentiment data: {len(processed_df)} records")
+                        return processed_df
+                    else:
+                        logger.warning("Failed to process combined sentiment data")
+                        return None
+                except Exception as e:
+                    logger.error(f"Error processing combined sentiment data: {str(e)}")
+                    return None
             else:
                 logger.warning("No sentiment data available from any source")
                 return None
 
         except Exception as e:
-            logger.error(f"Error fetching combined sentiment: {str(e)}")
+            logger.error(f"Error in fetch_combined_sentiment: {str(e)}")
             return None
+
+    def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Process and combine sentiment data from multiple sources"""
+        try:
+            logger.info("Processing combined sentiment data")
+            
+            # Ensure datetime format for ds column
+            df['ds'] = pd.to_datetime(df['ds'])
+            
+            # Group by date and calculate weighted average sentiment
+            daily_sentiment = df.groupby('ds').agg({
+                'sentiment_score': lambda x: np.average(x, weights=df.loc[x.index, 'confidence']),
+                'confidence': 'mean'
+            }).reset_index()
+
+            # Calculate additional metrics
+            daily_sentiment['tone_avg'] = (daily_sentiment['sentiment_score'] - 0.5) * 200
+            daily_sentiment['tone_std'] = df.groupby(df['ds'].dt.date)['sentiment_score'].transform('std')
+            daily_sentiment['article_count'] = df.groupby(df['ds'].dt.date)['sentiment_score'].transform('count')
+
+            # Sort by date
+            result = daily_sentiment.sort_values('ds')
+            
+            logger.info(f"Successfully processed sentiment data: {len(result)} records")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error processing combined sentiment: {str(e)}")
+            return pd.DataFrame()
 
     def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch and analyze sentiment from Yahoo Finance news"""
