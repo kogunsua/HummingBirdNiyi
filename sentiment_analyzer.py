@@ -219,7 +219,7 @@ class MultiSourceSentimentAnalyzer:
         self.newsapi_key = "65773c625d48ffecc8522ad52fe0fd7199cce"  # Updated key without pub_ prefix
         self.finnhub_key = "cpllsnpr01qn8g1v08hgcpllsnpr01qn8g1v08i0"
 
-    def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+def fetch_combined_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch sentiment data from multiple sources"""
         try:
             logger.info(f"Fetching combined sentiment for {symbol} from {start_date} to {end_date}")
@@ -388,7 +388,7 @@ def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> 
             logger.error(f"Error fetching Yahoo sentiment: {str(e)}")
             return None
 
-    def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch and analyze sentiment from News API"""
         try:
             logger.info(f"Fetching News API sentiment for {symbol} from {start_date} to {end_date}")
@@ -548,7 +548,7 @@ def fetch_finnhub_sentiment(self, symbol: str, start_date: str, end_date: str) -
             logger.error(f"Error fetching Finnhub sentiment: {str(e)}")
             return None
 
-    def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
+def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
         """Process and combine sentiment data from multiple sources"""
         try:
             logger.info("Processing combined sentiment data")
