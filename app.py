@@ -12,7 +12,7 @@ from forecasting import (
     display_economic_indicators,
     add_technical_indicators
 )
-from sentiment_analyzer import (
+from .sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
     integrate_multi_source_sentiment,
     display_sentiment_impact_analysis,
