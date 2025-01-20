@@ -2,6 +2,10 @@
 Multi-source sentiment analyzer for financial market analysis.
 Provides synchronous sentiment analysis from multiple sources.
 """
+"""
+Multi-source sentiment analyzer for financial market analysis.
+Provides synchronous sentiment analysis from multiple sources.
+"""
 
 import pandas as pd
 import numpy as np
@@ -270,6 +274,26 @@ def display_sentiment_impact_analysis(sentiment_period: int,
             f"{reliability_info['confidence']:.0%}",
             help="Reliability of the selected sentiment data source"
         )
+    
+    with st.expander("💡 Understanding Sentiment Impact"):
+        st.markdown("""
+        **How Sentiment Affects the Forecast:**
+        
+        1. **Analysis Period** (Historical Window)
+           - Longer periods provide more stable analysis
+           - Shorter periods capture recent market sentiment
+           - Optimal period varies by asset volatility
+        
+        2. **Impact Level** (Weight)
+           - High (>70%): Strong sentiment influence
+           - Medium (30-70%): Balanced price-sentiment mix
+           - Low (<30%): Minimal sentiment adjustment
+        
+        3. **Source Reliability**
+           - Multi-Source: Highest reliability (combined sources)
+           - GDELT: Global event impact
+           - News/Finance API: Market-specific sentiment
+        """)
 
 def display_sentiment_impact_results(impact_metrics: Dict) -> None:
     """Display sentiment impact analysis results"""
@@ -312,6 +336,33 @@ def display_sentiment_impact_results(impact_metrics: Dict) -> None:
             "Price Sensitivity",
             f"{sensitivity:.2f} {sensitivity_color}"
         )
+    
+    # Add detailed analysis guide
+    with st.expander("📊 Impact Analysis Interpretation"):
+        st.markdown(f"""
+        **Current Market Sentiment Analysis:**
+        
+        1. **Correlation** ({impact_metrics.get('sentiment_correlation', 0):.2f}):
+           - {
+            "Strong price-sentiment relationship" if abs(impact_metrics.get('sentiment_correlation', 0)) > 0.7
+            else "Moderate price-sentiment relationship" if abs(impact_metrics.get('sentiment_correlation', 0)) > 0.3
+            else "Weak price-sentiment relationship"
+           }
+        
+        2. **Volatility** ({impact_metrics.get('sentiment_volatility', 0):.2f}):
+           - {
+            "High sentiment volatility - exercise caution" if impact_metrics.get('sentiment_volatility', 0) > 0.7
+            else "Moderate sentiment volatility" if impact_metrics.get('sentiment_volatility', 0) > 0.3
+            else "Low sentiment volatility - stable sentiment"
+           }
+        
+        3. **Price Sensitivity** ({impact_metrics.get('price_sensitivity', 0):.2f}):
+           - {
+            "High price sensitivity to sentiment" if impact_metrics.get('price_sensitivity', 0) > 0.7
+            else "Moderate price sensitivity" if impact_metrics.get('price_sensitivity', 0) > 0.3
+            else "Low price sensitivity to sentiment"
+           }
+        """)
 
 def get_sentiment_data(analyzer: MultiSourceSentimentAnalyzer,
                       symbol: str,
@@ -353,6 +404,7 @@ def get_sentiment_data(analyzer: MultiSourceSentimentAnalyzer,
 def integrate_multi_source_sentiment(symbol: str,
                                    sentiment_period: int,
                                    sentiment_weight: float = 0.5) -> Tuple[Optional[pd.DataFrame], Dict]:
+                                
     """Integrate sentiment analysis with forecasting"""
     try:
         analyzer = MultiSourceSentimentAnalyzer()
