@@ -1,3 +1,8 @@
+"""
+Multi-source sentiment analyzer for financial market analysis.
+Provides synchronous sentiment analysis from multiple sources.
+"""
+
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -14,34 +19,23 @@ from textblob import TextBlob
 import streamlit as st
 import plotly.graph_objects as go
 
-# Configure logging with more detailed format
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-class SentimentConfig:
-    """Configuration class for sentiment analysis parameters"""
-    def __init__(self, 
-                 newsapi_key: str,
-                 finnhub_key: str,
-                 sentiment_period: int = 30,
-                 sentiment_weight: float = 0.5):
+class MultiSourceSentimentAnalyzer:
+    """Enhanced sentiment analyzer with multiple data sources"""
+    
+    def __init__(self, newsapi_key: str = None, finnhub_key: str = None):
+        """Initialize the sentiment analyzer"""
         self.newsapi_key = newsapi_key
         self.finnhub_key = finnhub_key
-        self.sentiment_period = sentiment_period
-        self.sentiment_weight = sentiment_weight
-
-class MultiSourceSentimentAnalyzer:
-    """Enhanced sentiment analyzer with multiple data sources and robust error handling"""
-    
-    def __init__(self, config: SentimentConfig):
-        """Initialize the sentiment analyzer with configuration"""
-        self.config = config
         self._initialize_nltk()
         self.newsapi_client = self._initialize_newsapi()
-        
+
     def _initialize_nltk(self) -> None:
         """Initialize NLTK with error handling"""
         try:
@@ -52,72 +46,72 @@ class MultiSourceSentimentAnalyzer:
             raise RuntimeError("Failed to initialize sentiment analyzer")
 
     def _initialize_newsapi(self) -> Optional[NewsApiClient]:
-        """Initialize News API client with error handling"""
-        try:
-            return NewsApiClient(api_key=self.config.newsapi_key)
-        except Exception as e:
-            logger.error(f"Failed to initialize News API client: {e}")
-            return None
+        """Initialize News API client"""
+        if self.newsapi_key:
+            try:
+                return NewsApiClient(api_key=self.newsapi_key)
+            except Exception as e:
+                logger.error(f"Failed to initialize News API client: {e}")
+        return None
 
-    async def fetch_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Main method to fetch sentiment from all sources asynchronously"""
-        try:
-            sentiment_tasks = [
-                self._fetch_yahoo_sentiment(symbol, start_date, end_date),
-                self._fetch_newsapi_sentiment(symbol, start_date, end_date),
-                self._fetch_finnhub_sentiment(symbol, start_date, end_date)
-            ]
-            
-            results = await asyncio.gather(*sentiment_tasks, return_exceptions=True)
-            valid_results = [df for df in results if isinstance(df, pd.DataFrame) and not df.empty]
-            
-            if not valid_results:
-                logger.warning("No valid sentiment data retrieved from any source")
-                return None
-                
-            return self._process_combined_sentiment(pd.concat(valid_results, ignore_index=True))
-            
-        except Exception as e:
-            logger.error(f"Error in fetch_sentiment: {e}")
-            return None
-
-    async def _fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch sentiment from Yahoo Finance with improved error handling"""
+    def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch sentiment from Yahoo Finance"""
         try:
             ticker = yf.Ticker(symbol)
-            news = await self._safe_api_call(lambda: ticker.news)
+            news = ticker.news
             
             if not news:
+                logger.warning(f"No news found for {symbol}")
                 return None
-                
+            
             sentiment_data = []
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            
             for article in news:
                 try:
+                    # Get article date
+                    date = datetime.fromtimestamp(article['providerPublishTime'])
+                    
+                    # Check if article is within date range
+                    if not (start_dt <= date <= end_dt):
+                        continue
+                    
+                    # Process article text
+                    title = article.get('title', '').strip()
+                    description = article.get('description', '').strip()
+                    
+                    if not title:  # Skip if no title
+                        continue
+                    
                     sentiment_data.append(
-                        await self._process_article(
-                            article.get('title', ''),
-                            article.get('description', ''),
-                            datetime.fromtimestamp(article['providerPublishTime']),
+                        self._process_article(
+                            title,
+                            description,
+                            date,
                             'yahoo'
                         )
                     )
                 except Exception as e:
-                    logger.debug(f"Skipping article due to error: {e}")
+                    logger.debug(f"Error processing Yahoo article: {e}")
                     continue
-                    
-            return pd.DataFrame([s for s in sentiment_data if s is not None])
+            
+            valid_data = [s for s in sentiment_data if s is not None]
+            if valid_data:
+                return pd.DataFrame(valid_data)
+            return None
             
         except Exception as e:
             logger.error(f"Error in Yahoo Finance sentiment fetch: {e}")
             return None
 
-    async def _fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
-        """Fetch sentiment from News API with rate limiting and retries"""
+    def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch sentiment from News API"""
         if not self.newsapi_client:
             return None
             
         try:
-            articles = await self._safe_api_call(
+            articles = self._safe_api_call(
                 lambda: self.newsapi_client.get_everything(
                     q=symbol,
                     from_param=start_date,
@@ -134,29 +128,39 @@ class MultiSourceSentimentAnalyzer:
             sentiment_data = []
             for article in articles['articles']:
                 try:
+                    title = article.get('title', '').strip()
+                    description = article.get('description', '').strip()
+                    published_at = article.get('publishedAt')
+                    
+                    if not (title and published_at):
+                        continue
+                        
                     sentiment_data.append(
-                        await self._process_article(
-                            article.get('title', ''),
-                            article.get('description', ''),
-                            pd.to_datetime(article['publishedAt']),
+                        self._process_article(
+                            title,
+                            description,
+                            pd.to_datetime(published_at),
                             'newsapi'
                         )
                     )
                 except Exception as e:
-                    logger.debug(f"Skipping article due to error: {e}")
+                    logger.debug(f"Error processing News API article: {e}")
                     continue
-                    
-            return pd.DataFrame([s for s in sentiment_data if s is not None])
+            
+            valid_data = [s for s in sentiment_data if s is not None]
+            if valid_data:
+                return pd.DataFrame(valid_data)
+            return None
             
         except Exception as e:
             logger.error(f"Error in News API sentiment fetch: {e}")
             return None
 
-    async def _process_article(self, 
-                             title: str, 
-                             description: str, 
-                             date: datetime,
-                             source: str) -> Optional[Dict[str, Any]]:
+    def _process_article(self, 
+                        title: str, 
+                        description: str, 
+                        date: datetime,
+                        source: str) -> Optional[Dict[str, Any]]:
         """Process a single article with sentiment analysis"""
         if not title.strip():
             return None
@@ -206,99 +210,176 @@ class MultiSourceSentimentAnalyzer:
             logger.error(f"Error processing combined sentiment: {e}")
             return pd.DataFrame()
 
-    async def _safe_api_call(self, 
-                            func: callable, 
-                            max_retries: int = 3, 
-                            delay: float = 1.0) -> Any:
+    def _safe_api_call(self, func: callable, max_retries: int = 3, delay: float = 1.0) -> Any:
         """Execute API calls with retry logic and rate limiting"""
         for attempt in range(max_retries):
             try:
-                await asyncio.sleep(delay)  # Rate limiting
+                time.sleep(delay)  # Rate limiting
                 return func()
             except Exception as e:
                 if attempt == max_retries - 1:
                     raise e
                 logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}): {e}")
-                await asyncio.sleep(delay * (attempt + 1))  # Exponential backoff
+                time.sleep(delay * (attempt + 1))  # Exponential backoff
 
-class SentimentVisualizer:
-    """Class for creating sentiment visualizations in Streamlit"""
+def display_sentiment_impact_analysis(sentiment_period: int, 
+                                    sentiment_weight: float,
+                                    sentiment_source: str) -> None:
+    """Display sentiment impact analysis configuration"""
+    st.markdown("### 🎭 Sentiment Impact Analysis")
     
-    @staticmethod
-    def display_sentiment_metrics(sentiment_data: pd.DataFrame) -> None:
-        """Display key sentiment metrics"""
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            current_sentiment = sentiment_data['sentiment_score'].iloc[-1]
-            sentiment_change = sentiment_data['sentiment_momentum'].iloc[-1]
-            st.metric(
-                "Current Sentiment",
-                f"{current_sentiment:.2f}",
-                f"{sentiment_change:+.2f}"
-            )
-        
-        with col2:
-            avg_sentiment = sentiment_data['sentiment_score'].mean()
-            st.metric("Average Sentiment", f"{avg_sentiment:.2f}")
-        
-        with col3:
-            conf_level = sentiment_data['confidence'].mean()
-            st.metric("Confidence Level", f"{conf_level:.2f}")
-
-    @staticmethod
-    def create_sentiment_chart(sentiment_data: pd.DataFrame) -> None:
-        """Create an interactive sentiment chart"""
-        fig = go.Figure()
-        
-        # Main sentiment line
-        fig.add_trace(go.Scatter(
-            x=sentiment_data['ds'],
-            y=sentiment_data['sentiment_score'],
-            name='Sentiment',
-            line=dict(color='purple', width=2)
-        ))
-        
-        # Moving average
-        fig.add_trace(go.Scatter(
-            x=sentiment_data['ds'],
-            y=sentiment_data['sentiment_ma'],
-            name='3-Day MA',
-            line=dict(color='blue', width=1, dash='dot')
-        ))
-        
-        # Confidence bands
-        upper_band = sentiment_data['sentiment_score'] + sentiment_data['sentiment_std']
-        lower_band = sentiment_data['sentiment_score'] - sentiment_data['sentiment_std']
-        
-        fig.add_trace(go.Scatter(
-            x=sentiment_data['ds'].tolist() + sentiment_data['ds'].tolist()[::-1],
-            y=upper_band.tolist() + lower_band.tolist()[::-1],
-            fill='toself',
-            fillcolor='rgba(128, 0, 128, 0.2)',
-            line=dict(color='rgba(255,255,255,0)'),
-            name='Confidence Band'
-        ))
-        
-        fig.update_layout(
-            title="Market Sentiment Analysis",
-            xaxis_title="Date",
-            yaxis_title="Sentiment Score",
-            height=400,
-            hovermode='x unified'
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Analysis Period",
+            f"{sentiment_period} days",
+            help="Historical period used for sentiment analysis"
         )
+    
+    with col2:
+        impact_level = (
+            "High" if sentiment_weight > 0.7
+            else "Medium" if sentiment_weight > 0.3
+            else "Low"
+        )
+        impact_color = (
+            "🔴" if sentiment_weight > 0.7
+            else "🟡" if sentiment_weight > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Impact Level",
+            f"{impact_level} {impact_color}",
+            f"{sentiment_weight:.1%}",
+            help="Level of influence sentiment has on forecast"
+        )
+    
+    with col3:
+        source_reliability = {
+            "Multi-Source": {"level": "High", "confidence": 0.9},
+            "GDELT": {"level": "Medium-High", "confidence": 0.8},
+            "Yahoo Finance": {"level": "Medium", "confidence": 0.7},
+            "News API": {"level": "Medium", "confidence": 0.7}
+        }
         
-        st.plotly_chart(fig, use_container_width=True)
+        reliability_info = source_reliability.get(sentiment_source, {"level": "Medium", "confidence": 0.7})
+        st.metric(
+            "Source Reliability",
+            reliability_info['level'],
+            f"{reliability_info['confidence']:.0%}",
+            help="Reliability of the selected sentiment data source"
+        )
 
-def initialize_sentiment_analyzer(newsapi_key: str, 
-                                finnhub_key: str,
-                                sentiment_period: int = 30,
-                                sentiment_weight: float = 0.5) -> MultiSourceSentimentAnalyzer:
-    """Factory function to create and initialize the sentiment analyzer"""
-    config = SentimentConfig(
-        newsapi_key=newsapi_key,
-        finnhub_key=finnhub_key,
-        sentiment_period=sentiment_period,
-        sentiment_weight=sentiment_weight
-    )
-    return MultiSourceSentimentAnalyzer(config)
+def display_sentiment_impact_results(impact_metrics: Dict) -> None:
+    """Display sentiment impact analysis results"""
+    st.subheader("🎭 Sentiment Impact Results")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        correlation = impact_metrics.get('sentiment_correlation', 0)
+        correlation_color = (
+            "🟢" if abs(correlation) > 0.7
+            else "🟡" if abs(correlation) > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price-Sentiment Correlation",
+            f"{correlation:.2f} {correlation_color}"
+        )
+    
+    with col2:
+        volatility = impact_metrics.get('sentiment_volatility', 0)
+        volatility_color = (
+            "🔴" if volatility > 0.7
+            else "🟡" if volatility > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Sentiment Volatility",
+            f"{volatility:.2f} {volatility_color}"
+        )
+    
+    with col3:
+        sensitivity = impact_metrics.get('price_sensitivity', 0)
+        sensitivity_color = (
+            "🟡" if sensitivity > 0.7
+            else "🟢" if sensitivity > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price Sensitivity",
+            f"{sensitivity:.2f} {sensitivity_color}"
+        )
+
+def get_sentiment_data(analyzer: MultiSourceSentimentAnalyzer,
+                      symbol: str,
+                      start_date: str,
+                      end_date: str,
+                      sentiment_source: str = "Multi-Source") -> Optional[pd.DataFrame]:
+    """Get sentiment data from specified source"""
+    try:
+        if sentiment_source == "Yahoo Finance":
+            return analyzer.fetch_yahoo_sentiment(symbol, start_date, end_date)
+        elif sentiment_source == "News API":
+            return analyzer.fetch_newsapi_sentiment(symbol, start_date, end_date)
+        else:  # Multi-Source
+            # Collect data from all available sources
+            sentiment_data = []
+            
+            # Try Yahoo Finance
+            yahoo_data = analyzer.fetch_yahoo_sentiment(symbol, start_date, end_date)
+            if yahoo_data is not None:
+                sentiment_data.append(yahoo_data)
+            
+            # Try News API
+            news_data = analyzer.fetch_newsapi_sentiment(symbol, start_date, end_date)
+            if news_data is not None:
+                sentiment_data.append(news_data)
+            
+            if not sentiment_data:
+                logger.warning("No sentiment data available from any source")
+                return None
+            
+            # Combine and process data
+            combined_data = pd.concat(sentiment_data, ignore_index=True)
+            return analyzer._process_combined_sentiment(combined_data)
+    
+    except Exception as e:
+        logger.error(f"Error getting sentiment data: {str(e)}")
+        return None
+
+def integrate_multi_source_sentiment(symbol: str,
+                                   sentiment_period: int,
+                                   sentiment_weight: float = 0.5) -> Tuple[Optional[pd.DataFrame], Dict]:
+    """Integrate sentiment analysis with forecasting"""
+    try:
+        analyzer = MultiSourceSentimentAnalyzer()
+        start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        
+        sentiment_data = get_sentiment_data(analyzer, symbol, start_date, end_date)
+        
+        if sentiment_data is not None:
+            impact_metrics = {
+                'sentiment_correlation': sentiment_data['sentiment_score'].autocorr(),
+                'sentiment_volatility': sentiment_data['sentiment_score'].std(),
+                'price_sensitivity': sentiment_weight
+            }
+            return sentiment_data, impact_metrics
+        
+        return None, {}
+    
+    except Exception as e:
+        logger.error(f"Error in sentiment integration: {str(e)}")
+        return None, {}
+
+# Export all required functions and classes
+__all__ = [
+    'MultiSourceSentimentAnalyzer',
+    'integrate_multi_source_sentiment',
+    'display_sentiment_impact_analysis',
+    'display_sentiment_impact_results',
+    'get_sentiment_data'
+]
