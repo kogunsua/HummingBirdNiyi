@@ -1,2 +1,4 @@
-# This file can be empty
-# It makes Python treat this directory as a package
+# __init__.py
+from .gdelt_analysis import GDELTAnalyzer, integrate_sentiment_analysis, update_forecasting_process
+
+__all__ = ['GDELTAnalyzer', 'integrate_sentiment_analysis', 'update_forecasting_process']

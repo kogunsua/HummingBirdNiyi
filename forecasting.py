@@ -110,28 +110,49 @@ def add_crypto_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
 def add_stock_specific_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Add stock-specific indicators"""
     try:
+        # Create a copy of the dataframe to avoid modifying the original
+        df = df.copy()
+        
+        # Ensure we're working with the correct Volume column
+        volume_col = 'Volume'
+        if isinstance(df.columns, pd.MultiIndex):
+            # Handle multi-index columns
+            volume_col = [col for col in df.columns if 'Volume' in col[0]][0]
+            close_col = [col for col in df.columns if 'Close' in col[0]][0]
+            high_col = [col for col in df.columns if 'High' in col[0]][0]
+            low_col = [col for col in df.columns if 'Low' in col[0]][0]
+        else:
+            close_col = 'Close'
+            high_col = 'High'
+            low_col = 'Low'
+
         # Volume Analysis
-        df['volume_ma'] = df['Volume'].rolling(window=20).mean()
-        df['volume_ratio'] = df['Volume'] / df['volume_ma']
+        df['volume_ma'] = df[volume_col].rolling(window=20).mean()
+        df['volume_ratio'] = df[volume_col] / df['volume_ma']
         
         # Price Momentum
-        df['momentum'] = df['Close'].pct_change(periods=20)
+        df['momentum'] = df[close_col].pct_change(periods=20)
         
         # Bollinger Bands
-        df['BB_middle'] = df['Close'].rolling(window=20).mean()
-        df['BB_upper'] = df['BB_middle'] + (df['Close'].rolling(window=20).std() * 2)
-        df['BB_lower'] = df['BB_middle'] - (df['Close'].rolling(window=20).std() * 2)
+        df['BB_middle'] = df[close_col].rolling(window=20).mean()
+        df['BB_upper'] = df['BB_middle'] + (df[close_col].rolling(window=20).std() * 2)
+        df['BB_lower'] = df['BB_middle'] - (df[close_col].rolling(window=20).std() * 2)
         
         # Average True Range (ATR)
-        high_low = df['High'] - df['Low']
-        high_close = (df['High'] - df['Close'].shift()).abs()
-        low_close = (df['Low'] - df['Close'].shift()).abs()
+        high_low = df[high_col] - df[low_col]
+        high_close = (df[high_col] - df[close_col].shift()).abs()
+        low_close = (df[low_col] - df[close_col].shift()).abs()
         ranges = pd.concat([high_low, high_close, low_close], axis=1)
         true_range = ranges.max(axis=1)
         df['ATR'] = true_range.rolling(window=14).mean()
         
         return df
         
+    except Exception as e:
+        logger.error(f"Error adding stock indicators: {str(e)}")
+        # Return original dataframe if there's an error
+        return df
+
     except Exception as e:
         logger.error(f"Error adding stock indicators: {str(e)}")
         return df
