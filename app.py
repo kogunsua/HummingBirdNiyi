@@ -1,9 +1,6 @@
-#<<<<<<< Dev
-=======
-# app.py
-#test
-#>>>>>>> Test
-import streamlit as st
+#app.py
+#dev
+import stream-lit as st
 from datetime import datetime, timedelta
 import logging
 import sys
