@@ -1,5 +1,5 @@
-# requirement.txt
-streamline
+#requirements.txt
+streamlit
 yfinance
 pandas
 requests
@@ -13,25 +13,9 @@ scipy
 holidays
 cython
 cmdstanpy
-pip
-polygon
 polygon-api-client
 pycoingecko
 statsmodels
-matplotlib
-tensorflow
-arch
-lightgbm
-xgboost
-fredapi
-alpha_vantage
-quandl
-wbdata
-ta
-xgboost 
-streamlit
-pystan
-python-dateutil
-quandl
-census
-python-dotenv
+newsapi-python
+nltk
+textblob
