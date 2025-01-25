@@ -391,7 +391,9 @@ def main():
         # Generate Forecast button
         if st.button("🚀 Generate Forecast"):
             try:
-                with st.spinner('Loading data...'):
+                with st
+
+with st.spinner('Loading data...'):
                     # Get asset data
                     fetcher = AssetDataFetcher()
                     price_data = (
@@ -402,9 +404,7 @@ def main():
                     
                     # Get economic indicator data if selected
                     if selected_indicator != 'None':
-                        economic_indicators = EconomicIndicators
-                        
-economic_indicators = EconomicIndicators()
+                        economic_indicators = EconomicIndicators()
                         economic_data = economic_indicators.get_indicator_data(selected_indicator)
                         if economic_data is not None:
                             display_economic_indicators(economic_data, selected_indicator, economic_indicators)
