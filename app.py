@@ -26,7 +26,6 @@ from sentiment_analyzer import (
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-from utils import format_market_cap
 
 # Configure logging
 logging.basicConfig(
