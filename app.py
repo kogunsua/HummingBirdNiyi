@@ -388,12 +388,12 @@ def main():
             sentiment_period, sentiment_weight, sentiment_source = get_sentiment_settings()
             display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source)
         
-        # Generate Forecast button
+# Generate Forecast button
         if st.button("🚀 Generate Forecast"):
-            try:with st with st.spinner('Loading data...'):
-
-#Get asset data
-fetcher = AssetDataFetcher()
+            try:
+                with st.spinner('Loading data...'):
+                    # Get asset data
+                    fetcher = AssetDataFetcher()
                     price_data = (
                         fetcher.get_stock_data(symbol) 
                         if asset_type == "Stocks" 
