@@ -333,7 +333,7 @@ class DividendAnalyzer:
             formatted[col] = formatted[col].apply(lambda x: f"${x:.2f}")
         formatted['Market Cap'] = formatted['Market Cap'].apply(self.format_market_cap)
         formatted['Payout Ratio'] = formatted['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
-        return formatted.
+        return formatted
         
     def _display_stock_card(self, stock: pd.Series):
         background_colors = {
