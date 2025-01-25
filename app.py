@@ -391,9 +391,7 @@ def main():
         # Generate Forecast button
         if st.button("🚀 Generate Forecast"):
             try:
-                with st
-
-with st.spinner('Loading data...'):
+                with st with st.spinner('Loading data...'):
                     # Get asset data
                     fetcher = AssetDataFetcher()
                     price_data = (
