@@ -412,8 +412,8 @@ def display_dividend_analysis(tickers=None):
         else:
             st.warning("No monthly dividend stocks found in the analyzed set.")
 
-# Main execution
-if __name__ == "__main__":
+def main():
+    """Main application function"""
     try:
         # Page configuration
         st.set_page_config(
@@ -422,89 +422,99 @@ if __name__ == "__main__":
             layout="wide"
         )
         
-        # Title and Description
-        st.title("📊 Dividend Stock Analysis Tool")
-        
-        # Understanding Dividend Health Section - Moved to top level
-        st.markdown("## 💡 Understanding Dividend Health")
-        st.markdown("""
-        Understanding how we evaluate dividend health is crucial for making informed investment decisions.
-        Below are the key factors we consider in our analysis:
-        """)
+        show_education_section()  # Display education content
+        show_analysis_section()   # Display analysis section
 
-        # Create three columns for the main metrics
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown("""
-            ### 🎯 Dividend Yield 
-            * **Healthy**: 3-7%
-            * **Caution**: >10%
-            * Higher yields may indicate higher risk
-            """)
-
-        with col2:
-            st.markdown("""
-            ### 📊 Payout Ratio
-            * **Regular Stocks**: <75%
-            * **REITs**: <90%
-            * Higher ratios suggest potential risk
-            """)
-
-        with col3:
-            st.markdown("""
-            ### 📈 Growth History
-            * **Strong**: 5+ years
-            * **Moderate**: 3-5 years
-            * **Weak**: <3 years
-            """)
-
-        # Additional context in an expander
-        with st.expander("Learn More About Dividend Health Analysis", expanded=False):
-            st.markdown("""
-            #### Understanding Our Ratings:
-            
-            🟢 **Buy Recommendation**
-            * Strong dividend history
-            * Sustainable payout ratio
-            * Healthy yield range
-            * Stable market cap
-            
-            🟡 **Hold Recommendation**
-            * Mixed signals in metrics
-            * Some concerns in one or more areas
-            * Requires monitoring
-            
-            🔴 **Caution Recommendation**
-            * Multiple concerning metrics
-            * Potential sustainability issues
-            * Higher risk factors
-            
-            #### Key Considerations:
-            * Market cap affects stability
-            * Industry context matters
-            * Economic conditions impact sustainability
-            * Past performance isn't a guarantee
-            """)
-
-        # Separator
-        st.markdown("---")
-
-        # Get user input for custom tickers
-        custom_tickers = st.text_input(
-            "Enter Stock Symbols (comma-separated)",
-            "O,MAIN,STAG,GOOD,AGNC,SDIV,CLM",
-            help="Enter stock symbols separated by commas (e.g., O,MAIN,STAG)"
-        ).strip()
-
-        # Analysis Button
-        if st.button("🔍 Analyze Dividend Stocks"):
-            if custom_tickers:
-                tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
-                display_dividend_analysis(tickers)
-            else:
-                display_dividend_analysis()
-            
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
         st.error("An unexpected error occurred. Please try again later.")
+
+def show_education_section():
+    """Display the educational content"""
+    # Title and Description
+    st.title("📊 Dividend Stock Analysis Tool")
+    
+    # Understanding Dividend Health Section
+    st.markdown("## 💡 Understanding Dividend Health")
+    st.markdown("""
+    Understanding how we evaluate dividend health is crucial for making informed investment decisions.
+    Below are the key factors we consider in our analysis:
+    """)
+
+    # Create three columns for the main metrics
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("""
+        ### 🎯 Dividend Yield 
+        * **Healthy**: 3-7%
+        * **Caution**: >10%
+        * Higher yields may indicate higher risk
+        """)
+
+    with col2:
+        st.markdown("""
+        ### 📊 Payout Ratio
+        * **Regular Stocks**: <75%
+        * **REITs**: <90%
+        * Higher ratios suggest potential risk
+        """)
+
+    with col3:
+        st.markdown("""
+        ### 📈 Growth History
+        * **Strong**: 5+ years
+        * **Moderate**: 3-5 years
+        * **Weak**: <3 years
+        """)
+
+    # Additional context in an expander
+    with st.expander("Learn More About Dividend Health Analysis", expanded=False):
+        st.markdown("""
+        #### Understanding Our Ratings:
+        
+        🟢 **Buy Recommendation**
+        * Strong dividend history
+        * Sustainable payout ratio
+        * Healthy yield range
+        * Stable market cap
+        
+        🟡 **Hold Recommendation**
+        * Mixed signals in metrics
+        * Some concerns in one or more areas
+        * Requires monitoring
+        
+        🔴 **Caution Recommendation**
+        * Multiple concerning metrics
+        * Potential sustainability issues
+        * Higher risk factors
+        
+        #### Key Considerations:
+        * Market cap affects stability
+        * Industry context matters
+        * Economic conditions impact sustainability
+        * Past performance isn't a guarantee
+        """)
+
+def show_analysis_section():
+    """Display the analysis section"""
+    # Separator
+    st.markdown("---")
+
+    # Get user input for custom tickers
+    custom_tickers = st.text_input(
+        "Enter Stock Symbols (comma-separated)",
+        "O,MAIN,STAG,GOOD,AGNC,SDIV,CLM",
+        help="Enter stock symbols separated by commas (e.g., O,MAIN,STAG)"
+    ).strip()
+
+    # Analysis Button
+    if st.button("🔍 Analyze Dividend Stocks"):
+        if custom_tickers:
+            tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
+            display_dividend_analysis(tickers)
+        else:
+            display_dividend_analysis()
+
+if __name__ == "__main__":
+    main()
