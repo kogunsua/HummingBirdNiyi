@@ -257,6 +257,9 @@ def main():
             page_icon="🐦",
             layout="wide"
         )
+
+        #Create Config instance at the start - ADD  THIS LINE
+        config = Config()
         
         # Display header
         display_header()
@@ -380,7 +383,9 @@ def main():
             # Analyze button
             if st.button("🔍 Analyze Dividends"):
                 try:
+                    # Initialize DividendAnalyzer with Config - MODIFY THESE LINES
                     analyzer = DividendAnalyzer()
+                    analyzer.config = config  # Add this line
                     tickers = [t.strip().upper() for t in custom_tickers.split(',')]
                     analyzer.display_dividend_analysis(tickers)
                 except Exception as e:
