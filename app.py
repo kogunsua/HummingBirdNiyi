@@ -10,28 +10,24 @@ import traceback
 import yfinance as yf
 
 # Import local modules
-from dividend_analyzer import DividendAnalyzer, show_dividend_education
+from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from config import Config, MODEL_DESCRIPTIONS
-from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
+from data_fetchers import AssetDataFetcher, EconomicIndicators
 from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
     display_confidence_analysis,
-    display_common_metrics,
-    display_crypto_metrics,
-    display_economic_indicators,
     add_technical_indicators
 )
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
-    integrate_multi_source_sentiment,
     display_sentiment_impact_analysis,
     display_sentiment_impact_results,
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-
+from utils import format_market_cap
 
 # Configure logging
 logging.basicConfig(
@@ -43,67 +39,12 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-        
-        # Create three columns for metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(
-                "Total Stocks Analyzed",
-                len(stock_data),
-                help="Total number of stocks analyzed for dividend payments"
-            )
-        
-        with col2:
-            avg_yield = stock_data['Dividend Yield (%)'].mean()
-            st.metric(
-                "Average Dividend Yield",
-                f"{avg_yield:.2f}%",
-                help="Average dividend yield across all analyzed stocks"
-            )
-        
-        with col3:
-            monthly_count = len(filter_monthly_dividend_stocks(stock_data))
-            st.metric(
-                "Monthly Dividend Stocks",
-                monthly_count,
-                help="Number of stocks that pay monthly dividends"
-            )
-        
-        # Display all stocks data
-        st.subheader("📊 All Dividend Stocks")
-        formatted_data = stock_data.copy()
-        formatted_data['Market Cap'] = formatted_data['Market Cap'].apply(format_market_cap)
-        formatted_data['Current Price'] = formatted_data['Current Price'].apply(lambda x: f"${x:,.2f}")
-        formatted_data['Monthly Dividend'] = formatted_data['Monthly Dividend'].apply(lambda x: f"${x:.4f}")
-        st.dataframe(formatted_data)
-        
-        # Filter and display monthly dividend stocks
-        monthly_stocks = filter_monthly_dividend_stocks(stock_data)
-        if not monthly_stocks.empty:
-            st.subheader("🎯 Top Monthly Dividend Stocks")
-            sorted_stocks = monthly_stocks.sort_values(by='Dividend Yield (%)', ascending=False)
-            top_stocks = sorted_stocks.head(3)
-            
-            # Display top stocks in cards
-            for _, stock in top_stocks.iterrows():
-                with st.container():
-                    st.markdown(f"""
-                    <div style='padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;'>
-                        <h3 style='margin: 0;'>{stock['Ticker']} - {stock['Dividend Yield (%)']:.2f}% Yield</h3>
-                        <p>Monthly Dividend: ${stock['Monthly Dividend']:.4f}</p>
-                        <p>Current Price: ${stock['Current Price']:,.2f}</p>
-                        <p>Market Cap: {format_market_cap(stock['Market Cap'])}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.warning("No monthly dividend stocks found in the analyzed set.")
 
 def display_header():
     """Display the application header with styling"""
     st.markdown("""
         <div style='text-align: center;'>
-            <h1>🐦 HummingBird v2m</h1>
+            <h1>🐦 HummingBird v2</h1>
             <p><i>Digital Asset & Stock Forecasting with Economic and Sentiment Indicators</i></p>
             <p>AvaResearch LLC - A Black Collar Production</p>
         </div>
@@ -310,12 +251,11 @@ def display_forecast_results(
         logger.error(f"Error displaying forecast results: {str(e)}")
         st.error("Failed to display forecast results.")
 
-# Main function
 def main():
     try:
         # Page configuration
         st.set_page_config(
-            page_title="HummingBird v2-m",
+            page_title="HummingBird v2",
             page_icon="🐦",
             layout="wide"
         )
