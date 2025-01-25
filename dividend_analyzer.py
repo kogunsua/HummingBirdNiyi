@@ -160,22 +160,22 @@ class DividendAnalyzer:
             logger.error(f"Frequency determination error: {str(e)}")
             return 'Unknown'
 
-    def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
-        try:
-            dividend_yield = data['Dividend Yield (%)']
-            payout_ratio = data['Payout Ratio']
-            ticker = data['Ticker']
-            
-            stock = yf.Ticker(ticker)
-            sector = stock.info.get('sector', '').lower()
-            is_reit = 'real estate' in sector or ticker in Config.DIVIDEND_DEFAULTS['REIT_TICKERS']
-            
-            score = 0
-            reasons = []
-            
-            # Yield Analysis
-            if dividend_yield > Config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
-                score -= 2
+  def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
+    try:
+        dividend_yield = data['Dividend Yield (%)']
+        payout_ratio = data['Payout Ratio']
+        ticker = data['Ticker']
+        
+        stock = yf.Ticker(ticker)
+        sector = stock.info.get('sector', '').lower()
+        is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']  # Use self.config
+        
+        score = 0
+        reasons = []
+        
+        # Yield Analysis
+        if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
+            score -= 2
                 reasons.append("High yield may be unsustainable")
             elif dividend_yield > Config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
                 score -= 1
