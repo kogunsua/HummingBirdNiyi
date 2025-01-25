@@ -298,40 +298,60 @@ def display_dividend_analysis(tickers=None):
     if tickers is None:
         tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC', 'SDIV', 'CLM']
     
-    # Add Understanding Dividend Health Section at the top
-    st.markdown("## 💡 Understanding Dividend Health")
+    # Add Understanding Dividend Health Section with more prominent styling
+    st.markdown("""
+    <div style='padding: 20px; border-radius: 10px; background-color: #f5f5f5; margin: 20px 0;'>
+        <h2 style='color: #1f77b4;'>💡 Understanding Dividend Health</h2>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Create expandable sections for different aspects of dividend health
-    with st.expander("How Dividend Health Affects Buy/Hold Recommendations", expanded=True):
+    with st.expander("Click here to learn about Dividend Health Analysis", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            ### 🎯 Dividend Yield Guidelines
+            * **Healthy Range:** 3-7%
+            * **Warning Sign:** Above 10%
+            * **Key Point:** Higher isn't always better
+            
+            ### 📊 Payout Ratio Thresholds
+            * **Regular Stocks:** Below 75% is healthy
+            * **REITs & Utilities:** Up to 90% is normal
+            * **Warning Sign:** Ratios above these levels
+            """)
+            
+        with col2:
+            st.markdown("""
+            ### 📈 Dividend History & Growth
+            * **Strong:** 5+ years of growth
+            * **Moderate:** 3-5 years of history
+            * **Caution:** Less than 3 years
+            
+            ### 💰 Market Cap Impact
+            * **Large Cap:** Most stable (>$10B)
+            * **Mid Cap:** Moderate stability
+            * **Small Cap:** Higher risk (<$2B)
+            """)
+        
         st.markdown("""
-        The dividend health score considers multiple factors to determine if a stock is suitable for dividend investing:
+        ### 🎨 Understanding Our Recommendations
         
-        **🎯 Dividend Yield Guidelines:**
-        * A yield between 3-7% is generally considered healthy
-        * Yields above 10% often signal potential unsustainability
-        * Compare yields to industry averages for context
-        
-        **📊 Payout Ratio Thresholds:**
-        * Regular Stocks: Below 75% is considered healthy
-        * REITs & Utilities: Up to 90% is acceptable due to business model
-        * Higher ratios may indicate risk to dividend sustainability
-        
-        **📈 Dividend History & Growth:**
-        * 5+ years of consistent/growing dividends: Strong positive indicator
-        * 3-5 years of history: Moderate positive indicator
-        * Less than 3 years or inconsistent: Exercise caution
-        
-        **💰 Market Cap Consideration:**
-        * Large Cap (>$10B): Added stability
-        * Mid Cap ($2B-$10B): Moderate stability
-        * Small Cap (<$2B): Higher volatility risk
-        
-        **🎨 Color-Coded Recommendations:**
-        * 🟢 Buy: Strong fundamentals across multiple criteria
-        * 🟡 Hold: Mixed signals or moderate concerns
-        * 🔴 Caution: Multiple risk factors present
+        | Rating | Color | Meaning |
+        |--------|-------|----------|
+        | 🟢 **Buy** | Green | Strong fundamentals, healthy metrics |
+        | 🟡 **Hold** | Orange | Mixed signals, monitor closely |
+        | 🔴 **Caution** | Red | Multiple risk factors present |
         """)
     
+    # Add the analysis section header
+    st.markdown("""
+    <div style='padding: 20px; border-radius: 10px; background-color: #f0f8ff; margin: 20px 0;'>
+        <h2 style='color: #2c3e50;'>📊 Dividend Stock Analysis</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
     with st.spinner("Analyzing dividend stocks... This may take a minute..."):
         stock_data = get_stock_data(tickers)
         
@@ -364,10 +384,7 @@ def display_dividend_analysis(tickers=None):
                 monthly_count,
                 help="Number of stocks that pay monthly dividends"
             )
-        
-        # Display all stocks data
-        st.subheader("📊 All Dividend Stocks")
-        
+
         # Add a high-yield warning if applicable
         high_yield_stocks = stock_data[stock_data['Dividend Yield (%)'] > 10]
         if not high_yield_stocks.empty:
@@ -380,6 +397,8 @@ def display_dividend_analysis(tickers=None):
             Review additional metrics and company fundamentals carefully.
             """)
         
+        # Display all stocks data
+        st.subheader("📊 All Dividend Stocks")
         formatted_data = stock_data.copy()
         formatted_data['Market Cap'] = formatted_data['Market Cap'].apply(format_market_cap)
         formatted_data['Current Price'] = formatted_data['Current Price'].apply(lambda x: f"${x:,.2f}")
@@ -400,7 +419,12 @@ def display_dividend_analysis(tickers=None):
         # Display monthly dividend stocks
         monthly_stocks = stock_data[stock_data['Dividend Frequency'] == 'Monthly']
         if not monthly_stocks.empty:
-            st.subheader("🎯 Top Monthly Dividend Stocks")
+            st.markdown("""
+            <div style='padding: 20px; border-radius: 10px; background-color: #f0fff0; margin: 20px 0;'>
+                <h2 style='color: #2c3e50;'>🎯 Top Monthly Dividend Stocks</h2>
+            </div>
+            """, unsafe_allow_html=True)
+            
             sorted_stocks = monthly_stocks.sort_values(by='Dividend Yield (%)', ascending=False)
             top_stocks = sorted_stocks.head(3)
             
