@@ -118,7 +118,7 @@ def get_user_inputs() -> Tuple[str, str, int]:
             symbol = st.text_input(
                 "Enter Cryptocurrency ID",
                 Config.DEFAULT_CRYPTO,
-                help="Enter a valid cryptocurrency ID (e.g., bitcoin, ethereum)"
+                help="Enter a valid cryptocurrency ID (e.g., bitcoin, xrp)"
             ).lower()
     
     with col3:
@@ -137,8 +137,8 @@ def get_dividend_inputs() -> list:
     # Allow users to input custom tickers
     custom_tickers = st.text_input(
         "Enter Stock Symbols (comma-separated)",
-        "O,MAIN,STAG,GOOD,AGNC",
-        help="Enter stock symbols separated by commas (e.g., O,MAIN,STAG)"
+        "MAIN",
+        help="Enter stock symbol (e.g.MAIN)"
     )
     
     # Convert input string to list and clean up
