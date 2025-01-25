@@ -344,6 +344,7 @@ class DividendAnalyzer:
         formatted = data.copy()
         for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
             formatted[col] = formatted[col].apply(lambda x: f"${x
+
     def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Format display data for presentation"""
         formatted = data.copy()
@@ -352,7 +353,7 @@ class DividendAnalyzer:
         formatted['Market Cap'] = formatted['Market Cap'].apply(self.format_market_cap)
         formatted['Payout Ratio'] = formatted['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
         return formatted
-
+        
     def _display_stock_card(self, stock: pd.Series):
         """Display individual stock card with styling"""
         background_colors = {
@@ -391,10 +392,10 @@ class DividendAnalyzer:
     def generate_csv_report(self, stock_data: pd.DataFrame) -> str:
         """Generate CSV report for download"""
         report_data = stock_data.copy()
-        # Add any additional calculations or formatting for the report
         return report_data.to_csv(index=False)
 
 
 def filter_monthly_dividend_stocks(data: pd.DataFrame) -> pd.DataFrame:
     """Filter and return monthly dividend stocks from the provided data."""
-    return data[data['Dividend Frequency'] == 'Monthly']
+    return data[data['Dividend Frequency'] == 'Monthly']                                                                
+
