@@ -184,7 +184,7 @@ def get_stock_data(tickers):
 
 def display_dividend_analysis(tickers=None):
     if tickers is None:
-        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC']
+        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC','SDIV']
     
     with st.spinner("Analyzing dividend stocks... This may take a minute..."):
         stock_data = get_stock_data(tickers)
