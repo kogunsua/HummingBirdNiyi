@@ -421,9 +421,6 @@ def main():
             page_icon="💰",
             layout="wide"
         )
-        
-        show_education_section()  # Display education content
-        show_analysis_section()   # Display analysis section
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
