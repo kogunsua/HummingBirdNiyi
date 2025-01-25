@@ -344,7 +344,7 @@ class DividendAnalyzer:
         formatted = data.copy()
         for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
             formatted[col] = formatted[col].apply(lambda x: f"${x
-
+                                                                
     def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Format display data for presentation"""
         formatted = data.copy()
@@ -397,5 +397,5 @@ class DividendAnalyzer:
 
 def filter_monthly_dividend_stocks(data: pd.DataFrame) -> pd.DataFrame:
     """Filter and return monthly dividend stocks from the provided data."""
-    return data[data['Dividend Frequency'] == 'Monthly']                                                                
-
+    return data[data['Dividend Frequency'] == 'Monthly']                                                            
+                                                            
