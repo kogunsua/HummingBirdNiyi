@@ -41,6 +41,21 @@ class Config:
         "Alpha Vantage": "Macroeconomic data, including interest rates and financial market data",
         "Political Data": "Political sentiment and market impact analysis"
     }
+
+    # Dividend Analysis Settings
+    DIVIDEND_DEFAULTS = {
+        'DEFAULT_DIVIDEND_STOCKS': ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC', 'SDIV', 'CLM'],
+        'REIT_TICKERS': ['O', 'STAG', 'GOOD'],
+        'YIELD_THRESHOLDS': {
+            'HEALTHY_MIN': 3,
+            'HEALTHY_MAX': 7,
+            'WARNING': 10
+        },
+        'PAYOUT_RATIOS': {
+            'NORMAL_MAX': 75,
+            'REIT_MAX': 90
+        }
+    }
     
     # Economic Indicators
     INDICATORS = {
