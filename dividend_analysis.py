@@ -330,46 +330,6 @@ def display_dividend_analysis(tickers=None):
                 monthly_count,
                 help="Number of stocks that pay monthly dividends"
             )
-            
-def display_dividend_analysis(tickers=None):
-    """
-    Main function to display dividend analysis
-    """
-    if tickers is None:
-        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC', 'SDIV', 'CLM']
-    
-    with st.spinner("Analyzing dividend stocks... This may take a minute..."):
-        stock_data = get_stock_data(tickers)
-        
-        if stock_data.empty:
-            st.warning("No stocks found with dividend information.")
-            return
-        
-        # Create three columns for metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric(
-                "Total Stocks Analyzed",
-                len(stock_data),
-                help="Total number of stocks analyzed for dividend payments"
-            )
-        
-        with col2:
-            avg_yield = stock_data['Dividend Yield (%)'].mean()
-            st.metric(
-                "Average Dividend Yield",
-                f"{avg_yield:.2f}%",
-                help="Average dividend yield across all analyzed stocks"
-            )
-        
-        with col3:
-            monthly_count = len(stock_data[stock_data['Dividend Frequency'] == 'Monthly'])
-            st.metric(
-                "Monthly Dividend Stocks",
-                monthly_count,
-                help="Number of stocks that pay monthly dividends"
-            )
         
         # Display all stocks data
         st.subheader("📊 All Dividend Stocks")
