@@ -10,6 +10,7 @@ import traceback
 import yfinance as yf
 
 # Import local modules
+from dividend_analyzer import DividendAnalyzer, show_dividend_education
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
 from forecasting import (
@@ -30,7 +31,7 @@ from sentiment_analyzer import (
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-from dividend_analyzer import DividendAnalyzer, show_dividend_education
+
 
 # Configure logging
 logging.basicConfig(
@@ -42,52 +43,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Dividend Analysis Functions
-def get_stock_data(tickers):
-    stock_data = []
-    for ticker in tickers:
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            if info.get('dividendYield') and info.get('dividendYield') > 0:
-                stock_data.append({
-                    'Ticker': ticker,
-                    'Monthly Dividend': info.get('lastDividendValue', 0),
-                    'Current Price': info.get('currentPrice', 0),
-                    'Dividend Yield (%)': info.get('dividendYield', 0) * 100,
-                    'Market Cap': info.get('marketCap', 0),
-                    'Dividend Frequency': info.get('dividendFrequency', 'Unknown')
-                })
-        except Exception as e:
-            st.warning(f"Could not fetch data for {ticker}: {str(e)}")
-    
-    return pd.DataFrame(stock_data)
-
-def filter_monthly_dividend_stocks(data):
-    return data[data['Dividend Frequency'] == 'Monthly']
-
-def format_market_cap(value):
-    if value >= 1e12:
-        return f"${value/1e12:.2f}T"
-    elif value >= 1e9:
-        return f"${value/1e9:.2f}B"
-    elif value >= 1e6:
-        return f"${value/1e6:.2f}M"
-    else:
-        return f"${value:,.2f}"
-
-def display_dividend_analysis(tickers=None):
-    if tickers is None:
-        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC']
-    
-    with st.spinner("Analyzing monthly dividend stocks..."):
-        stock_data = get_stock_data(tickers)
-        
-        if stock_data.empty:
-            st.warning("No stocks found with dividend information.")
-            return
         
         # Create three columns for metrics
         col1, col2, col3 = st.columns(3)
@@ -475,7 +430,6 @@ def main():
             
             # Show education section if desired
             if st.checkbox("💡 Show Dividend Education", value=True):
-                from dividend_analyzer import show_dividend_education
                 show_dividend_education()
             
             # Get stock inputs
@@ -488,7 +442,6 @@ def main():
             # Analyze button
             if st.button("🔍 Analyze Dividends"):
                 try:
-                    from dividend_analyzer import DividendAnalyzer
                     analyzer = DividendAnalyzer()
                     tickers = [t.strip().upper() for t in custom_tickers.split(',')]
                     analyzer.display_dividend_analysis(tickers)
