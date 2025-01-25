@@ -55,9 +55,11 @@ def show_dividend_education():
 
 class DividendAnalyzer:
     def __init__(self):
+        """Initialize DividendAnalyzer with Config instance"""
         self.config = Config()
-    
+
     def format_market_cap(self, value: float) -> str:
+        """Format market cap value into readable string"""
         if value >= 1e12:
             return f"${value/1e12:.2f}T"
         elif value >= 1e9:
@@ -68,6 +70,7 @@ class DividendAnalyzer:
             return f"${value:,.2f}"
 
     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
+        """Get dividend frequency information from Seeking Alpha"""
         try:
             url = f"https://seekingalpha.com/symbol/{ticker}/dividends/history"
             headers = {
@@ -91,6 +94,7 @@ class DividendAnalyzer:
         return None
 
     def get_marketbeat_info(self, ticker: str) -> Optional[str]:
+        """Get dividend frequency information from MarketBeat"""
         try:
             url = f"https://www.marketbeat.com/stocks/NYSE/{ticker}/dividend/"
             response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
@@ -112,6 +116,7 @@ class DividendAnalyzer:
         return None
 
     def determine_dividend_frequency(self, ticker: str) -> str:
+        """Determine dividend payment frequency using multiple sources"""
         try:
             stock = yf.Ticker(ticker)
             end_date = datetime.now()
@@ -161,70 +166,72 @@ class DividendAnalyzer:
             return 'Unknown'
 
     def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
-           try:
-                dividend_yield = data['Dividend Yield (%)']
-                payout_ratio = data['Payout Ratio']
-                ticker = data['Ticker']
-        
-                stock = yf.Ticker(ticker)
-                sector = stock.info.get('sector', '').lower()
-                is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']
-        
-                score = 0
-                reasons = []
-        
-                # Yield Analysis
-                if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
-                    score -= 2
-                    reasons.append("High yield may be unsustainable")
-                elif dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                     score -= 1
-                     reasons.append("Yield is above average")
-                elif self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                     score += 1
-                     reasons.append("Healthy yield range")
-        
-               # Payout Analysis
-               max_payout = self.config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
-               if payout_ratio > max_payout:
-                  score -= 2
-                  reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
-               elif payout_ratio > max_payout * 0.8:
-                    score -= 1
-                    reasons.append("Payout ratio nearing upper limit")
-               elif 0 < payout_ratio <= max_payout * 0.8:
-                    score += 1
-                    reasons.append("Healthy payout ratio")
-        
-               # Growth History
-               years_of_growth = data['Years of Growth']
-               if years_of_growth >= 5:
-                  score += 2
-                  reasons.append("Strong dividend growth history")
-               elif years_of_growth >= 3:
-                    score += 1
-                    reasons.append("Moderate dividend growth history")
-        
-             # Market Cap
+        """Evaluate dividend health and return recommendation"""
+        try:
+            dividend_yield = data['Dividend Yield (%)']
+            payout_ratio = data['Payout Ratio']
+            ticker = data['Ticker']
+            
+            stock = yf.Ticker(ticker)
+            sector = stock.info.get('sector', '').lower()
+            is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']
+            
+            score = 0
+            reasons = []
+            
+            # Yield Analysis
+            if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
+                score -= 2
+                reasons.append("High yield may be unsustainable")
+            elif dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+                score -= 1
+                reasons.append("Yield is above average")
+            elif self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+                score += 1
+                reasons.append("Healthy yield range")
+            
+            # Payout Analysis
+            max_payout = self.config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
+            if payout_ratio > max_payout:
+                score -= 2
+                reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
+            elif payout_ratio > max_payout * 0.8:
+                score -= 1
+                reasons.append("Payout ratio nearing upper limit")
+            elif 0 < payout_ratio <= max_payout * 0.8:
+                score += 1
+                reasons.append("Healthy payout ratio")
+            
+            # Growth History
+            years_of_growth = data['Years of Growth']
+            if years_of_growth >= 5:
+                score += 2
+                reasons.append("Strong dividend growth history")
+            elif years_of_growth >= 3:
+                score += 1
+                reasons.append("Moderate dividend growth history")
+            
+            # Market Cap
             market_cap = data['Market Cap']
-              if market_cap >= 10e9:
-                 score += 1
-                 reasons.append("Large market cap indicates stability")
-              elif market_cap < 1e9:
-                 score -= 1
-                 reasons.append("Small market cap may indicate higher risk")
-        
-               if score >= 2:
-               return "Buy", reasons, "green"
-               elif score >= 0:
-               return "Hold", reasons, "orange"
-               else:
-                   return "Caution", reasons, "red"
-              except Exception as e:
-                  logger.error(f"Health evaluation error: {str(e)}")
-                  return "Unknown", ["Unable to evaluate"], "gray"
+            if market_cap >= 10e9:
+                score += 1
+                reasons.append("Large market cap indicates stability")
+            elif market_cap < 1e9:
+                score -= 1
+                reasons.append("Small market cap may indicate higher risk")
+            
+            if score >= 2:
+                return "Buy", reasons, "green"
+            elif score >= 0:
+                return "Hold", reasons, "orange"
+            else:
+                return "Caution", reasons, "red"
+        except Exception as e:
+            logger.error(f"Health evaluation error: {str(e)}")
+            return "Unknown", ["Unable to evaluate"], "gray"
 
     def get_stock_data(self, tickers: List[str]) -> pd.DataFrame:
+        """Get stock data for analysis"""
         stock_data = []
         for ticker in tickers:
             try:
@@ -277,8 +284,9 @@ class DividendAnalyzer:
         return pd.DataFrame(stock_data)
 
     def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
+        """Display dividend analysis results"""
         if not tickers:
-            tickers = Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS']
+            tickers = self.config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS']
         
         stock_data = self.get_stock_data(tickers)
         if stock_data.empty:
@@ -291,6 +299,7 @@ class DividendAnalyzer:
         self._display_monthly_stocks(stock_data)
 
     def _display_metrics(self, stock_data: pd.DataFrame):
+        """Display overview metrics"""
         st.subheader("📈 Overview Metrics")
         col1, col2, col3, col4 = st.columns(4)
         
@@ -304,16 +313,19 @@ class DividendAnalyzer:
             st.metric("Average Payout", f"{stock_data['Payout Ratio'].mean():.1f}%")
 
     def _display_warnings(self, stock_data: pd.DataFrame):
+        """Display warning messages for high-yield stocks"""
         high_yield = stock_data[stock_data['Dividend Yield (%)'] > 10]
         if not high_yield.empty:
             st.warning(f"⚠️ High Yield Alert: {', '.join(high_yield['Ticker'])}")
 
     def _display_data_table(self, stock_data: pd.DataFrame):
+        """Display detailed analysis table"""
         st.subheader("📊 Detailed Analysis")
         display_data = self._format_display_data(stock_data)
         st.dataframe(display_data)
 
     def _display_monthly_stocks(self, stock_data: pd.DataFrame):
+        """Display monthly dividend paying stocks"""
         monthly = stock_data[stock_data['Dividend Frequency'] == 'Monthly']
         if monthly.empty:
             return
@@ -328,14 +340,21 @@ class DividendAnalyzer:
         st.download_button("📥 Download Analysis", csv, "monthly_dividends.csv")
 
     def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format display data for presentation"""
+        formatted = data.copy()
+        for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
+            formatted[col] = formatted[col].apply(lambda x: f"${x
+    def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format display data for presentation"""
         formatted = data.copy()
         for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
             formatted[col] = formatted[col].apply(lambda x: f"${x:.2f}")
         formatted['Market Cap'] = formatted['Market Cap'].apply(self.format_market_cap)
         formatted['Payout Ratio'] = formatted['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
         return formatted
-        
+
     def _display_stock_card(self, stock: pd.Series):
+        """Display individual stock card with styling"""
         background_colors = {
             "red": "rgba(255, 235, 235, 0.2)",
             "orange": "rgba(255, 250, 235, 0.2)",
@@ -374,6 +393,7 @@ class DividendAnalyzer:
         report_data = stock_data.copy()
         # Add any additional calculations or formatting for the report
         return report_data.to_csv(index=False)
+
 
 def filter_monthly_dividend_stocks(data: pd.DataFrame) -> pd.DataFrame:
     """Filter and return monthly dividend stocks from the provided data."""
