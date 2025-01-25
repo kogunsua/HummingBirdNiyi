@@ -44,8 +44,8 @@ class Config:
 
     # Dividend Analysis Settings
     DIVIDEND_DEFAULTS = {
-        'DEFAULT_DIVIDEND_STOCKS': ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC', 'SDIV', 'CLM'],
-        'REIT_TICKERS': ['O', 'STAG', 'GOOD'],
+        'DEFAULT_DIVIDEND_STOCKS': ['CLM'],
+        'REIT_TICKERS': ['O'],
         'YIELD_THRESHOLDS': {
             'HEALTHY_MIN': 3,
             'HEALTHY_MAX': 7,
