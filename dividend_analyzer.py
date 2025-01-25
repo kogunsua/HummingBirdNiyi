@@ -160,7 +160,7 @@ class DividendAnalyzer:
             logger.error(f"Frequency determination error: {str(e)}")
             return 'Unknown'
 
-  def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
+    def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
     try:
         dividend_yield = data['Dividend Yield (%)']
         payout_ratio = data['Payout Ratio']
@@ -168,7 +168,7 @@ class DividendAnalyzer:
         
         stock = yf.Ticker(ticker)
         sector = stock.info.get('sector', '').lower()
-        is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']  # Use self.config
+        is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']
         
         score = 0
         reasons = []
@@ -176,53 +176,53 @@ class DividendAnalyzer:
         # Yield Analysis
         if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
             score -= 2
-                reasons.append("High yield may be unsustainable")
-            elif dividend_yield > Config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                score -= 1
-                reasons.append("Yield is above average")
-            elif Config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= Config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                score += 1
-                reasons.append("Healthy yield range")
-            
-            # Payout Analysis
-            max_payout = Config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
-            if payout_ratio > max_payout:
-                score -= 2
-                reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
-            elif payout_ratio > max_payout * 0.8:
-                score -= 1
-                reasons.append("Payout ratio nearing upper limit")
-            elif 0 < payout_ratio <= max_payout * 0.8:
-                score += 1
-                reasons.append("Healthy payout ratio")
-            
-            # Growth History
-            years_of_growth = data['Years of Growth']
-            if years_of_growth >= 5:
-                score += 2
-                reasons.append("Strong dividend growth history")
-            elif years_of_growth >= 3:
-                score += 1
-                reasons.append("Moderate dividend growth history")
-            
-            # Market Cap
-            market_cap = data['Market Cap']
-            if market_cap >= 10e9:
-                score += 1
-                reasons.append("Large market cap indicates stability")
-            elif market_cap < 1e9:
-                score -= 1
-                reasons.append("Small market cap may indicate higher risk")
-            
-            if score >= 2:
-                return "Buy", reasons, "green"
-            elif score >= 0:
-                return "Hold", reasons, "orange"
-            else:
-                return "Caution", reasons, "red"
-        except Exception as e:
-            logger.error(f"Health evaluation error: {str(e)}")
-            return "Unknown", ["Unable to evaluate"], "gray"
+            reasons.append("High yield may be unsustainable")
+        elif dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+            score -= 1
+            reasons.append("Yield is above average")
+        elif self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+            score += 1
+            reasons.append("Healthy yield range")
+        
+        # Payout Analysis
+        max_payout = self.config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
+        if payout_ratio > max_payout:
+            score -= 2
+            reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
+        elif payout_ratio > max_payout * 0.8:
+            score -= 1
+            reasons.append("Payout ratio nearing upper limit")
+        elif 0 < payout_ratio <= max_payout * 0.8:
+            score += 1
+            reasons.append("Healthy payout ratio")
+        
+        # Growth History
+        years_of_growth = data['Years of Growth']
+        if years_of_growth >= 5:
+            score += 2
+            reasons.append("Strong dividend growth history")
+        elif years_of_growth >= 3:
+            score += 1
+            reasons.append("Moderate dividend growth history")
+        
+        # Market Cap
+        market_cap = data['Market Cap']
+        if market_cap >= 10e9:
+            score += 1
+            reasons.append("Large market cap indicates stability")
+        elif market_cap < 1e9:
+            score -= 1
+            reasons.append("Small market cap may indicate higher risk")
+        
+        if score >= 2:
+            return "Buy", reasons, "green"
+        elif score >= 0:
+            return "Hold", reasons, "orange"
+        else:
+            return "Caution", reasons, "red"
+    except Exception as e:
+        logger.error(f"Health evaluation error: {str(e)}")
+        return "Unknown", ["Unable to evaluate"], "gray"
 
     def get_stock_data(self, tickers: List[str]) -> pd.DataFrame:
         stock_data = []
