@@ -1,9 +1,35 @@
-# Dividend Analysis Functions
+# Dividend Analysis Module
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
 import requests
 from bs4 import BeautifulSoup
-import numpy as np
+import logging
 from datetime import datetime, timedelta
 import re
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('dividend_analysis.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Helper functions
+def format_market_cap(value):
+    if value >= 1e12:
+        return f"${value/1e12:.2f}T"
+    elif value >= 1e9:
+        return f"${value/1e9:.2f}B"
+    elif value >= 1e6:
+        return f"${value/1e6:.2f}M"
+    else:
+        return f"${value:,.2f}"
 
 def get_seekingalpha_dividend_info(ticker):
     """
@@ -18,7 +44,6 @@ def get_seekingalpha_dividend_info(ticker):
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Parse dividend frequency information
         frequency_text = soup.find(text=re.compile(r'Dividend Frequency', re.IGNORECASE))
         if frequency_text:
             frequency = frequency_text.find_next('td').text.strip()
@@ -44,7 +69,6 @@ def get_marketbeat_dividend_info(ticker):
         response = requests.get(url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Look for dividend frequency information
         frequency_div = soup.find('div', text=re.compile(r'Dividend Frequency', re.IGNORECASE))
         if frequency_div:
             frequency = frequency_div.find_next('div').text.strip()
@@ -132,7 +156,83 @@ def determine_dividend_frequency(ticker):
         logger.error(f"Error determining dividend frequency for {ticker}: {str(e)}")
         return 'Unknown'
 
+def evaluate_dividend_health(row, sector_data=None):
+    """
+    Evaluate dividend health and provide buy/hold recommendation
+    """
+    dividend_yield = row['Dividend Yield (%)']
+    payout_ratio = row['Payout Ratio']
+    ticker = row['Ticker']
+    
+    try:
+        stock = yf.Ticker(ticker)
+        sector = stock.info.get('sector', '').lower()
+        is_reit = 'real estate' in sector or ticker in ['O', 'STAG', 'GOOD']
+        
+        score = 0
+        reasons = []
+        
+        # Yield Analysis
+        if dividend_yield > 10:
+            score -= 2
+            reasons.append("High yield may be unsustainable")
+        elif dividend_yield > 7:
+            score -= 1
+            reasons.append("Yield is above average")
+        elif 3 <= dividend_yield <= 7:
+            score += 1
+            reasons.append("Healthy yield range")
+        
+        # Payout Ratio Analysis
+        max_payout = 90 if is_reit else 75
+        if payout_ratio > max_payout:
+            score -= 2
+            reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
+        elif payout_ratio > max_payout * 0.8:
+            score -= 1
+            reasons.append("Payout ratio nearing upper limit")
+        elif 0 < payout_ratio <= max_payout * 0.8:
+            score += 1
+            reasons.append("Healthy payout ratio")
+        
+        # Dividend Growth History
+        years_of_growth = row['Years of Growth']
+        if years_of_growth >= 5:
+            score += 2
+            reasons.append("Strong dividend growth history")
+        elif years_of_growth >= 3:
+            score += 1
+            reasons.append("Moderate dividend growth history")
+        
+        # Market Cap Analysis
+        market_cap = row['Market Cap']
+        if market_cap >= 10e9:  # Large cap (>$10B)
+            score += 1
+            reasons.append("Large market cap indicates stability")
+        elif market_cap < 1e9:  # Small cap (<$1B)
+            score -= 1
+            reasons.append("Small market cap may indicate higher risk")
+        
+        # Final Recommendation
+        if score >= 2:
+            recommendation = "Buy"
+            color = "green"
+        elif score >= 0:
+            recommendation = "Hold"
+            color = "orange"
+        else:
+            recommendation = "Caution"
+            color = "red"
+        
+        return recommendation, reasons, color
+    except Exception as e:
+        logger.error(f"Error evaluating dividend health for {ticker}: {str(e)}")
+        return "Unknown", ["Unable to evaluate"], "gray"
+        
 def get_stock_data(tickers):
+    """
+    Fetch and process stock dividend data
+    """
     stock_data = []
     for ticker in tickers:
         try:
@@ -162,7 +262,7 @@ def get_stock_data(tickers):
                 
                 monthly_dividend = annual_dividend / 12
                 
-                stock_data.append({
+                data = {
                     'Ticker': ticker,
                     'Monthly Dividend': monthly_dividend,
                     'Annual Dividend': annual_dividend,
@@ -173,18 +273,64 @@ def get_stock_data(tickers):
                     'Ex-Dividend Date': info.get('exDividendDate', 'Unknown'),
                     'Dividend Growth Rate (5Y)': info.get('fiveYearAvgDividendYield', 0),
                     'Payout Ratio': info.get('payoutRatio', 0) * 100 if info.get('payoutRatio') else 0,
-                    'Years of Growth': len(historical_dividends.index.year.unique())
-                })
+                    'Years of Growth': len(historical_dividends.index.year.unique()),
+                    'Sector': info.get('sector', 'Unknown')
+                }
+                
+                # Add dividend health evaluation
+                recommendation, reasons, color = evaluate_dividend_health(data)
+                data['Action'] = recommendation
+                data['Analysis Notes'] = '; '.join(reasons)
+                data['Action Color'] = color
+                
+                stock_data.append(data)
         
         except Exception as e:
             logger.error(f"Error processing {ticker}: {str(e)}")
             st.warning(f"Could not fetch data for {ticker}: {str(e)}")
     
     return pd.DataFrame(stock_data)
-
+    
 def display_dividend_analysis(tickers=None):
+    """
+    Main function to display dividend analysis
+    """
     if tickers is None:
-        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC','SDIV']
+        tickers = ['O', 'MAIN', 'STAG', 'GOOD', 'AGNC', 'SDIV', 'CLM']
+    
+    # Add Understanding Dividend Health Section at the top
+    st.markdown("## 💡 Understanding Dividend Health")
+    
+    # Create expandable sections for different aspects of dividend health
+    with st.expander("How Dividend Health Affects Buy/Hold Recommendations", expanded=True):
+        st.markdown("""
+        The dividend health score considers multiple factors to determine if a stock is suitable for dividend investing:
+        
+        **🎯 Dividend Yield Guidelines:**
+        * A yield between 3-7% is generally considered healthy
+        * Yields above 10% often signal potential unsustainability
+        * Compare yields to industry averages for context
+        
+        **📊 Payout Ratio Thresholds:**
+        * Regular Stocks: Below 75% is considered healthy
+        * REITs & Utilities: Up to 90% is acceptable due to business model
+        * Higher ratios may indicate risk to dividend sustainability
+        
+        **📈 Dividend History & Growth:**
+        * 5+ years of consistent/growing dividends: Strong positive indicator
+        * 3-5 years of history: Moderate positive indicator
+        * Less than 3 years or inconsistent: Exercise caution
+        
+        **💰 Market Cap Consideration:**
+        * Large Cap (>$10B): Added stability
+        * Mid Cap ($2B-$10B): Moderate stability
+        * Small Cap (<$2B): Higher volatility risk
+        
+        **🎨 Color-Coded Recommendations:**
+        * 🟢 Buy: Strong fundamentals across multiple criteria
+        * 🟡 Hold: Mixed signals or moderate concerns
+        * 🔴 Caution: Multiple risk factors present
+        """)
     
     with st.spinner("Analyzing dividend stocks... This may take a minute..."):
         stock_data = get_stock_data(tickers)
@@ -221,38 +367,75 @@ def display_dividend_analysis(tickers=None):
         
         # Display all stocks data
         st.subheader("📊 All Dividend Stocks")
+        
+        # Add a high-yield warning if applicable
+        high_yield_stocks = stock_data[stock_data['Dividend Yield (%)'] > 10]
+        if not high_yield_stocks.empty:
+            st.warning("""
+            ⚠️ **High Yield Alert**: Some stocks show yields above 10%. While attractive, these high yields may indicate:
+            * Potential dividend sustainability risks
+            * Recent stock price decline
+            * Market concerns about future performance
+            
+            Review additional metrics and company fundamentals carefully.
+            """)
+        
         formatted_data = stock_data.copy()
         formatted_data['Market Cap'] = formatted_data['Market Cap'].apply(format_market_cap)
         formatted_data['Current Price'] = formatted_data['Current Price'].apply(lambda x: f"${x:,.2f}")
         formatted_data['Monthly Dividend'] = formatted_data['Monthly Dividend'].apply(lambda x: f"${x:.4f}")
         formatted_data['Annual Dividend'] = formatted_data['Annual Dividend'].apply(lambda x: f"${x:.2f}")
         formatted_data['Payout Ratio'] = formatted_data['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
-        st.dataframe(formatted_data)
         
-        # Filter and display monthly dividend stocks
+        # Color-code the Action column
+        def color_action(val):
+            color = stock_data.loc[stock_data['Action'] == val, 'Action Color'].iloc[0]
+            return f'color: {color}'
+        
+        st.dataframe(
+            formatted_data.style
+            .applymap(color_action, subset=['Action'])
+        )
+        
+        # Display monthly dividend stocks
         monthly_stocks = stock_data[stock_data['Dividend Frequency'] == 'Monthly']
         if not monthly_stocks.empty:
             st.subheader("🎯 Top Monthly Dividend Stocks")
             sorted_stocks = monthly_stocks.sort_values(by='Dividend Yield (%)', ascending=False)
             top_stocks = sorted_stocks.head(3)
             
-            # Display top stocks in cards
             for _, stock in top_stocks.iterrows():
                 with st.container():
+                    health_color = stock["Action Color"]
+                    background_color = "rgba(255, 235, 235, 0.2)" if health_color == "red" else \
+                                     "rgba(255, 250, 235, 0.2)" if health_color == "orange" else \
+                                     "rgba(235, 255, 235, 0.2)"
+                    
                     st.markdown(f"""
-                    <div style='padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;'>
+                    <div style='padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin: 10px 0; background-color: {background_color};'>
                         <h3 style='margin: 0;'>{stock['Ticker']} - {stock['Dividend Yield (%)']:.2f}% Yield</h3>
-                        <p>Monthly Dividend: ${stock['Monthly Dividend']}</p>
-                        <p>Annual Dividend: ${stock['Annual Dividend']}</p>
-                        <p>Current Price: ${stock['Current Price']}</p>
-                        <p>Market Cap: {format_market_cap(stock['Market Cap'])}</p>
-                        <p>Payout Ratio: {stock['Payout Ratio']}</p>
-                        <p>Years of Dividend Growth: {stock['Years of Growth']}</p>
-                        <p>Dividend Frequency: {stock['Dividend Frequency']}</p>
+                        <p style='color: {stock["Action Color"]}; font-size: 1.1em; margin: 10px 0;'>
+                            <strong>Recommendation: {stock['Action']}</strong>
+                        </p>
+                        <p style='font-style: italic;'>Analysis: {stock['Analysis Notes']}</p>
+                        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 10px;'>
+                            <div>
+                                <p>💰 Monthly Dividend: ${stock['Monthly Dividend']}</p>
+                                <p>📈 Annual Dividend: ${stock['Annual Dividend']}</p>
+                                <p>💵 Current Price: ${stock['Current Price']}</p>
+                            </div>
+                            <div>
+                                <p>🏢 Market Cap: {format_market_cap(stock['Market Cap'])}</p>
+                                <p>📊 Payout Ratio: {stock['Payout Ratio']}</p>
+                                <p>📅 Years of Growth: {stock['Years of Growth']}</p>
+                            </div>
+                        </div>
+                        <p>🔄 Dividend Frequency: {stock['Dividend Frequency']}</p>
+                        <p>🏭 Sector: {stock['Sector']}</p>
                     </div>
                     """, unsafe_allow_html=True)
             
-            # Add a download button for the analysis
+            # Add download button for the analysis
             csv = monthly_stocks.to_csv(index=False)
             st.download_button(
                 label="Download Monthly Dividend Stocks Analysis",
@@ -262,3 +445,32 @@ def display_dividend_analysis(tickers=None):
             )
         else:
             st.warning("No monthly dividend stocks found in the analyzed set.")
+            
+# Main execution
+if __name__ == "__main__":
+    try:
+        st.set_page_config(
+            page_title="Dividend Analysis",
+            page_icon="💰",
+            layout="wide"
+        )
+        
+        st.title("Dividend Stock Analysis")
+        
+        # Get user input for custom tickers
+        custom_tickers = st.text_input(
+            "Enter Stock Symbols (comma-separated)",
+            "O,MAIN,STAG,GOOD,AGNC,SDIV,CLM",
+            help="Enter stock symbols separated by commas (e.g., O,MAIN,STAG)"
+        ).strip()
+        
+        if custom_tickers:
+            tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
+            display_dividend_analysis(tickers)
+        else:
+            display_dividend_analysis()
+            
+    except Exception as e:
+        logger.error(f"Application error: {str(e)}")
+        st.error("An unexpected error occurred. Please try again later.")
+        
