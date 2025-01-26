@@ -1,5 +1,4 @@
 # asset_config.py
-
 class AssetConfig:
     # Prophet Model Configurations
     STOCK_CONFIG = {
