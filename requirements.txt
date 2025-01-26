@@ -19,3 +19,4 @@ statsmodels
 newsapi-python
 nltk
 textblob
+beautifulsoup4 

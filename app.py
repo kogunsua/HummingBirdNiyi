@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -5,23 +6,21 @@ import sys
 from typing import Optional, Tuple, Dict
 import pandas as pd
 import traceback
+import yfinance as yf
 
 # Import local modules
+from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from config import Config, MODEL_DESCRIPTIONS
-from data_fetchers import AssetDataFetcher, EconomicIndicators, RealEstateIndicators
+from data_fetchers import AssetDataFetcher, EconomicIndicators
 from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
     display_confidence_analysis,
-    display_common_metrics,
-    display_crypto_metrics,
-    display_economic_indicators,
     add_technical_indicators
 )
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
-    integrate_multi_source_sentiment,
     display_sentiment_impact_analysis,
     display_sentiment_impact_results,
     get_sentiment_data
@@ -43,7 +42,7 @@ def display_header():
     """Display the application header with styling"""
     st.markdown("""
         <div style='text-align: center;'>
-            <h1>🐦 HummingBird v2m</h1>
+            <h1>🐦 HummingBird v2</h1>
             <p><i>Digital Asset & Stock Forecasting with Economic and Sentiment Indicators</i></p>
             <p>AvaResearch LLC - A Black Collar Production</p>
         </div>
@@ -119,7 +118,7 @@ def get_user_inputs() -> Tuple[str, str, int]:
             symbol = st.text_input(
                 "Enter Cryptocurrency ID",
                 Config.DEFAULT_CRYPTO,
-                help="Enter a valid cryptocurrency ID (e.g., bitcoin, ethereum)"
+                help="Enter a valid cryptocurrency ID (e.g., bitcoin, xrp)"
             ).lower()
     
     with col3:
@@ -130,6 +129,21 @@ def get_user_inputs() -> Tuple[str, str, int]:
         )
     
     return asset_type, symbol, periods
+
+def get_dividend_inputs() -> list:
+    """Get user inputs for dividend analysis"""
+    st.markdown("### 💰 Monthly Dividend Stock Analysis")
+    
+    # Allow users to input custom tickers
+    custom_tickers = st.text_input(
+        "Enter Stock Symbol",
+        "MAIN",
+        help="Enter stock symbol (e.g.MAIN)"
+    )
+    
+    # Convert input string to list and clean up
+    tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
+    return tickers
 
 def get_sentiment_settings() -> Tuple[int, float, str]:
     """Get user settings for sentiment analysis"""
@@ -236,115 +250,148 @@ def display_forecast_results(
         st.error("Failed to display forecast results.")
 
 def main():
-    """Main application function"""
     try:
-        # Setup page configuration
+        # Page configuration
         st.set_page_config(
-            page_title="HummingBird v2-m",
+            page_title="HummingBird v2",
             page_icon="🐦",
             layout="wide"
         )
+
+        #Create Config instance at the start - ADD  THIS LINE
+        config = Config()
         
         # Display header
         display_header()
         
-        # Get sidebar inputs
-        selected_model, selected_indicator = setup_sidebar()
+        # Create tabs for different analyses
+        forecast_tab, dividend_tab = st.tabs(["📈 Price Forecast", "💰 Dividend Analysis"])
         
-        # Get main user inputs
-        asset_type, symbol, periods = get_user_inputs()
-        
-        # Forecast Type Selection
-        st.markdown("### 📊 Select Forecast Type")
-        forecast_type = st.radio(
-            "Choose forecast type",
-            ["Price Only", "Price + Market Sentiment"],
-            help="Choose whether to include market sentiment analysis in the forecast",
-            horizontal=True
-        )
-        
-        # Get sentiment settings if needed
-        sentiment_data = None
-        if forecast_type == "Price + Market Sentiment":
-            sentiment_period, sentiment_weight, sentiment_source = get_sentiment_settings()
-            display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source)
-        
-        # Generate Forecast button
-        if st.button("🚀 Generate Forecast"):
-            try:
-                with st.spinner('Loading data...'):
-                    # Get asset data
-                    fetcher = AssetDataFetcher()
-                    price_data = (
-                        fetcher.get_stock_data(symbol) 
-                        if asset_type == "Stocks" 
-                        else fetcher.get_crypto_data(symbol)
-                    )
-                    
-                    # Get economic indicator data if selected
-                    if selected_indicator != 'None':
-                        economic_indicators = EconomicIndicators()
-                        economic_data = economic_indicators.get_indicator_data(selected_indicator)
-                        if economic_data is not None:
-                            display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-                    
-                    # Get sentiment data if selected
-                    if forecast_type == "Price + Market Sentiment":
-                        start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
-                        end_date = datetime.now().strftime("%Y-%m-%d")
+        with forecast_tab:
+            # Get sidebar inputs
+            selected_model, selected_indicator = setup_sidebar()
+            
+            # Get main user inputs
+            asset_type, symbol, periods = get_user_inputs()
+            
+            # Forecast Type Selection
+            st.markdown("### 📊 Select Forecast Type")
+            forecast_type = st.radio(
+                "Choose forecast type",
+                ["Price Only", "Price + Market Sentiment"],
+                help="Choose whether to include market sentiment analysis in the forecast",
+                horizontal=True
+            )
+            
+            # Get sentiment settings if needed
+            sentiment_data = None
+            if forecast_type == "Price + Market Sentiment":
+                sentiment_period, sentiment_weight, sentiment_source = get_sentiment_settings()
+                display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source)
+            
+            # Generate Forecast button
+            if st.button("🚀 Generate Forecast"):
+                try:
+                    with st.spinner('Loading data...'):
+                        # Get asset data
+                        fetcher = AssetDataFetcher()
+                        price_data = (
+                            fetcher.get_stock_data(symbol) 
+                            if asset_type == "Stocks" 
+                            else fetcher.get_crypto_data(symbol)
+                        )
                         
-                        with st.spinner(f'Fetching sentiment data from {sentiment_source}...'):
-                            if sentiment_source == "GDELT":
-                                gdelt_analyzer = GDELTAnalyzer()
-                                sentiment_data = gdelt_analyzer.fetch_sentiment_data(start_date, end_date)
-                            else:
-                                analyzer = MultiSourceSentimentAnalyzer()
-                                sentiment_data = get_sentiment_data(
-                                    analyzer,
-                                    symbol,
-                                    start_date,
-                                    end_date,
-                                    sentiment_source
-                                )
-                    
-                    if price_data is not None:
-                        if selected_model != "Prophet":
-                            st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+                        # Get economic indicator data if selected
+                        if selected_indicator != 'None':
+                            economic_indicators = EconomicIndicators()
+                            economic_data = economic_indicators.get_indicator_data(selected_indicator)
+                            if economic_data is not None:
+                                display_economic_indicators(economic_data, selected_indicator, economic_indicators)
                         
-                        # Process forecast
-                        with st.spinner('Generating forecast...'):
-                            forecast, impact_metrics = process_forecast(
-                                price_data,
-                                sentiment_data,
-                                forecast_type,
-                                periods,
-                                sentiment_weight if forecast_type == "Price + Market Sentiment" else 0.5
-                            )
+                        # Get sentiment data if selected
+                        if forecast_type == "Price + Market Sentiment":
+                            start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+                            end_date = datetime.now().strftime("%Y-%m-%d")
                             
-                            if forecast is not None:
-                                st.success("Forecast generated successfully!")
-                                
-                                # Add technical indicators
-                                price_data = add_technical_indicators(price_data, asset_type)
-                                
-                                # Display results
-                                display_forecast_results(
+                            with st.spinner(f'Fetching sentiment data from {sentiment_source}...'):
+                                if sentiment_source == "GDELT":
+                                    gdelt_analyzer = GDELTAnalyzer()
+                                    sentiment_data = gdelt_analyzer.fetch_sentiment_data(start_date, end_date)
+                                else:
+                                    analyzer = MultiSourceSentimentAnalyzer()
+                                    sentiment_data = get_sentiment_data(
+                                        analyzer,
+                                        symbol,
+                                        start_date,
+                                        end_date,
+                                        sentiment_source
+                                    )
+                        
+                        if price_data is not None:
+                            if selected_model != "Prophet":
+                                st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+                            
+                            # Process forecast
+                            with st.spinner('Generating forecast...'):
+                                forecast, impact_metrics = process_forecast(
                                     price_data,
-                                    forecast,
-                                    impact_metrics,
+                                    sentiment_data,
                                     forecast_type,
-                                    asset_type,
-                                    symbol
+                                    periods,
+                                    sentiment_weight if forecast_type == "Price + Market Sentiment" else 0.5
                                 )
-                            else:
-                                st.error("Failed to generate forecast. Please try again with different parameters.")
-                    else:
-                        st.error(f"Could not load data for {symbol}. Please verify the symbol.")
+                                
+                                if forecast is not None:
+                                    st.success("Forecast generated successfully!")
+                                    
+                                    # Add technical indicators
+                                    price_data = add_technical_indicators(price_data, asset_type)
+                                    
+                                    # Display results
+                                    display_forecast_results(
+                                        price_data,
+                                        forecast,
+                                        impact_metrics,
+                                        forecast_type,
+                                        asset_type,
+                                        symbol
+                                    )
+                                else:
+                                    st.error("Failed to generate forecast. Please try different parameters.")
+                        else:
+                            st.error(f"Could not load data for {symbol}. Please verify the symbol.")
 
-            except Exception as e:
-                logger.error(f"Error in forecast generation: {str(e)}")
-                st.error("An error occurred during forecast generation.")
-                st.exception(e)
+                except Exception as e:
+                    logger.error(f"Error in forecast generation: {str(e)}")
+                    st.error("An error occurred during forecast generation.")
+                    st.exception(e)
+        
+        with dividend_tab:
+            st.title("Monthly Dividend Analysis")
+            
+            # Show education section if desired
+            if st.checkbox("💡 Show Dividend Education", value=True):
+                show_dividend_education()
+            
+            # Get stock inputs
+            custom_tickers = st.text_input(
+                "Enter Stock Symbol",
+                Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS'],
+                help="Enter stock symbol (e.g.MAIN)"
+            )
+            
+            # Analyze button
+            if st.button("🔍 Analyze Dividends"):
+                try:
+                    # Initialize DividendAnalyzer with Config - MODIFY THESE LINES
+                    analyzer = DividendAnalyzer()
+                    analyzer.config = config  # Add this line
+                    tickers = [t.strip().upper() for t in custom_tickers.split(',')]
+                    analyzer.display_dividend_analysis(tickers)
+                except Exception as e:
+                    logger.error(f"Dividend analysis error: {str(e)}")
+                    st.error("An error occurred during dividend analysis. Please try again.")
+                    st.exception(e)
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}\n{traceback.format_exc()}")
