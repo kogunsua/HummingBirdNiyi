@@ -68,7 +68,7 @@ class DividendAnalyzer:
             return f"${value/1e6:.2f}M"
         else:
             return f"${value:,.2f}"
-    # Add the Polygon.io method here, right after __init__ and before other analysis methods
+
     def _get_polygon_etf_data(self, ticker: str) -> Optional[Dict]:
         """Fetch ETF data from Polygon.io as a backup source"""
         try:
@@ -126,18 +126,21 @@ class DividendAnalyzer:
             logger.error(f"Unexpected error in Polygon.io data fetch for {ticker}: {str(e)}")
             return None 
     
-def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
-    """Get ETF dividend data with fallback to Polygon.io"""
-    try:
-        # Existing yfinance initialization
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        # Keep existing ETF type check
-        if info.get('quoteType', '').upper() != 'ETF':
-            logger.debug(f"{ticker} is not identified as an ETF")
-            return None
+    def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
+        """Get ETF dividend data with fallback to Polygon.io"""
+        try:
+            # Existing yfinance initialization
+            stock = yf.Ticker(ticker)
+            info = stock.info
             
+            # Keep existing ETF type check
+            if info.get('quoteType', '').upper() != 'ETF':
+                logger.debug(f"{ticker} is not identified as an ETF")
+                return None
+        except Exception as e:
+            logger.error(f"Error fetching yfinance data for {ticker}: {str(e)}")
+            return None
+        
         try:
             # Existing yfinance dividend history logic
             end_date = datetime.now()
@@ -200,14 +203,14 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
                 'dividendRate': total_annual_dividend,
                 'lastUpdated': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             }
-            
+        
         except (KeyError, IndexError) as e:
             logger.error(f"Data structure error for {ticker}: {str(e)}")
             return None
         
-    except Exception as e:
-        logger.error(f"Failed to analyze ETF {ticker}: {str(e)}")
-        return None    
+        except Exception as e:
+            logger.error(f"Failed to analyze ETF {ticker}: {str(e)}")
+            return None    
 
     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
         """Get dividend information from Seeking Alpha with multi-exchange support"""
@@ -542,7 +545,7 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
             logger.error(f"Alpha Vantage API error for {ticker}: {str(e)}")
             return None
      
-def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
+    def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
         """Display dividend analysis results"""
         if not tickers:
             tickers = self.config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS']
@@ -568,7 +571,7 @@ def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
         self._display_data_table(stock_data)
         self._display_monthly_stocks(stock_data)
 
-def _display_metrics(self, stock_data: pd.DataFrame):
+    def _display_metrics(self, stock_data: pd.DataFrame):
         """Display overview metrics"""
         st.subheader("📈 Overview Metrics")
         col1, col2, col3, col4 = st.columns(4)
@@ -585,19 +588,19 @@ def _display_metrics(self, stock_data: pd.DataFrame):
             avg_payout = stock_data['Payout Ratio'].mean()
             st.metric("Average Payout", f"{avg_payout:.1f}%")
 
-def _display_warnings(self, stock_data: pd.DataFrame):
+    def _display_warnings(self, stock_data: pd.DataFrame):
         """Display warning messages for high-yield stocks"""
         high_yield = stock_data[stock_data['Dividend Yield (%)'] > 10]
         if not high_yield.empty:
             st.warning(f"⚠️ High Yield Alert: {', '.join(high_yield['Ticker'])}")
 
-def _display_data_table(self, stock_data: pd.DataFrame):
+    def _display_data_table(self, stock_data: pd.DataFrame):
         """Display detailed analysis table"""
         st.subheader("📊 Detailed Analysis")
         display_data = self._format_display_data(stock_data)
         st.dataframe(display_data)
 
-def _display_monthly_stocks(self, stock_data: pd.DataFrame):
+    def _display_monthly_stocks(self, stock_data: pd.DataFrame):
         """Display monthly dividend paying stocks"""
         monthly = stock_data[stock_data['Dividend Frequency'] == 'Monthly']
         if monthly.empty:
@@ -612,7 +615,7 @@ def _display_monthly_stocks(self, stock_data: pd.DataFrame):
         csv = monthly.to_csv(index=False)
         st.download_button("📥 Download Analysis", csv, "monthly_dividends.csv")
 
-def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Format display data for presentation"""
         formatted = data.copy()
         for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
@@ -621,7 +624,7 @@ def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
         formatted['Payout Ratio'] = formatted['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
         return formatted
 
-def _display_stock_card(self, stock: pd.Series):
+    def _display_stock_card(self, stock: pd.Series):
         """Display individual stock card with styling"""
         background_colors = {
             "red": "rgba(255, 235, 235, 0.2)",
@@ -665,6 +668,5 @@ def _display_stock_card(self, stock: pd.Series):
 def filter_monthly_dividend_stocks(data: pd.DataFrame) -> pd.DataFrame:
     """Filter and return monthly dividend stocks from the provided data."""
     return data[data['Dividend Frequency'] == 'Monthly']
-                                                                
                                                             
                                                             
