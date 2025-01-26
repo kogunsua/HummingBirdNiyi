@@ -126,8 +126,8 @@ class DividendAnalyzer:
             logger.error(f"Unexpected error in Polygon.io data fetch for {ticker}: {str(e)}")
             return None 
     
-    def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
-        """Get ETF dividend data with fallback to Polygon.io"""
+def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
+    """Get ETF dividend data with fallback to Polygon.io"""
     try:
         # Existing yfinance initialization
         stock = yf.Ticker(ticker)
@@ -204,7 +204,7 @@ class DividendAnalyzer:
         except (KeyError, IndexError) as e:
             logger.error(f"Data structure error for {ticker}: {str(e)}")
             return None
-            
+        
     except Exception as e:
         logger.error(f"Failed to analyze ETF {ticker}: {str(e)}")
         return None    
