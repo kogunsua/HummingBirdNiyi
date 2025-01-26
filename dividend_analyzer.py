@@ -542,7 +542,7 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
             logger.error(f"Alpha Vantage API error for {ticker}: {str(e)}")
             return None
      
-    def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
+def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
         """Display dividend analysis results"""
         if not tickers:
             tickers = self.config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS']
@@ -568,7 +568,7 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
         self._display_data_table(stock_data)
         self._display_monthly_stocks(stock_data)
 
-    def _display_metrics(self, stock_data: pd.DataFrame):
+def _display_metrics(self, stock_data: pd.DataFrame):
         """Display overview metrics"""
         st.subheader("📈 Overview Metrics")
         col1, col2, col3, col4 = st.columns(4)
@@ -576,25 +576,28 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
         with col1:
             st.metric("Total Stocks", len(stock_data))
         with col2:
-            st.metric("Average Yield", f"{stock_data['Dividend Yield (%)'].mean():.2f}%")
+            avg_yield = stock_data['Dividend Yield (%)'].mean()
+            st.metric("Average Yield", f"{avg_yield:.2f}%")
         with col3:
-            st.metric("Monthly Payers", len(stock_data[stock_data['Dividend Frequency'] == 'Monthly']))
+            monthly_count = len(stock_data[stock_data['Dividend Frequency'] == 'Monthly'])
+            st.metric("Monthly Payers", monthly_count)
         with col4:
-            st.metric("Average Payout", f"{stock_data['Payout Ratio'].mean():.1f}%")
+            avg_payout = stock_data['Payout Ratio'].mean()
+            st.metric("Average Payout", f"{avg_payout:.1f}%")
 
-    def _display_warnings(self, stock_data: pd.DataFrame):
+def _display_warnings(self, stock_data: pd.DataFrame):
         """Display warning messages for high-yield stocks"""
         high_yield = stock_data[stock_data['Dividend Yield (%)'] > 10]
         if not high_yield.empty:
             st.warning(f"⚠️ High Yield Alert: {', '.join(high_yield['Ticker'])}")
 
-    def _display_data_table(self, stock_data: pd.DataFrame):
+def _display_data_table(self, stock_data: pd.DataFrame):
         """Display detailed analysis table"""
         st.subheader("📊 Detailed Analysis")
         display_data = self._format_display_data(stock_data)
         st.dataframe(display_data)
 
-    def _display_monthly_stocks(self, stock_data: pd.DataFrame):
+def _display_monthly_stocks(self, stock_data: pd.DataFrame):
         """Display monthly dividend paying stocks"""
         monthly = stock_data[stock_data['Dividend Frequency'] == 'Monthly']
         if monthly.empty:
@@ -608,8 +611,8 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
         
         csv = monthly.to_csv(index=False)
         st.download_button("📥 Download Analysis", csv, "monthly_dividends.csv")
-    
-    def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
+
+def _format_display_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Format display data for presentation"""
         formatted = data.copy()
         for col in ['Monthly Dividend', 'Annual Dividend', 'Current Price']:
@@ -617,8 +620,8 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
         formatted['Market Cap'] = formatted['Market Cap'].apply(self.format_market_cap)
         formatted['Payout Ratio'] = formatted['Payout Ratio'].apply(lambda x: f"{x:.1f}%")
         return formatted
-        
-    def _display_stock_card(self, stock: pd.Series):
+
+def _display_stock_card(self, stock: pd.Series):
         """Display individual stock card with styling"""
         background_colors = {
             "red": "rgba(255, 235, 235, 0.2)",
@@ -626,7 +629,6 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
             "green": "rgba(235, 255, 235, 0.2)"
         }
         bg_color = background_colors.get(stock["Action Color"], "rgba(255, 255, 255, 0.2)")
-
         
         st.markdown(f"""
         <div style='padding: 20px; border: 1px solid #ddd; border-radius: 10px; 
@@ -652,7 +654,7 @@ def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
                 </div>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)  
 
     def generate_csv_report(self, stock_data: pd.DataFrame) -> str:
         """Generate CSV report for download"""
