@@ -136,7 +136,7 @@ def get_dividend_inputs() -> list:
     
     # Allow users to input custom tickers
     custom_tickers = st.text_input(
-        "Enter Stock Symbols (comma-separated)",
+        "Enter Stock Symbol",
         "MAIN",
         help="Enter stock symbol (e.g.MAIN)"
     )
@@ -375,7 +375,7 @@ def main():
             
             # Get stock inputs
             custom_tickers = st.text_input(
-                "Enter Stock Symbols",
+                "Enter Stock Symbol",
                 Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS'],
                 help="Enter stock symbol (e.g.MAIN)"
             )
