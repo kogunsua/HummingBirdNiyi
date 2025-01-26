@@ -375,9 +375,9 @@ def main():
             
             # Get stock inputs
             custom_tickers = st.text_input(
-                "Enter Stock Symbols (comma-separated)",
+                "Enter Stock Symbols",
                 Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS'],
-                help="Enter stock symbols separated by commas (e.g., O,MAIN,STAG)"
+                help="Enter stock symbol (e.g.MAIN)"
             )
             
             # Analyze button
