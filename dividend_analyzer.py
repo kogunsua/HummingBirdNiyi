@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 from datetime import datetime, timedelta
-import requests
+import re
 from typing import List, Dict, Optional, Tuple
 from config import Config
 
@@ -69,7 +69,7 @@ class DividendAnalyzer:
         else:
             return f"${value:,.2f}"
 
-     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
+    def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
         """Get dividend information from Seeking Alpha with multi-exchange support"""
         try:
             # Try base URL first
