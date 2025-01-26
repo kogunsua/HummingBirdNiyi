@@ -69,101 +69,184 @@ class DividendAnalyzer:
         else:
             return f"${value:,.2f}"
 
-    def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
-        """Get dividend frequency information from Seeking Alpha"""
+     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
+        """Get dividend information from Seeking Alpha with multi-exchange support"""
         try:
+            # Try base URL first
             url = f"https://seekingalpha.com/symbol/{ticker}/dividends/history"
             headers = {
-                'User-Agent': 'Mozilla/5.0',
-                'Accept': 'text/html,application/xhtml+xml'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             }
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
             
-            frequency_text = soup.find(text=re.compile(r'Dividend Frequency'))
-            if frequency_text:
-                frequency = frequency_text.find_next('td').text.strip()
-                return {
-                    'Monthly': 'Monthly',
-                    'Quarterly': 'Quarterly',
-                    'Semi-Annual': 'Semi-Annually',
-                    'Annual': 'Annually'
-                }.get(frequency.capitalize(), None)
+            for exchange in ['NYSE', 'NASDAQ', 'AMEX']:
+                try:
+                    exchange_url = f"{url}?exchange={exchange}"
+                    response = requests.get(exchange_url, headers=headers, timeout=10)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        frequency_text = soup.find(text=re.compile(r'Dividend Frequency', re.IGNORECASE))
+                        if frequency_text:
+                            frequency = frequency_text.find_next('td').text.strip()
+                            return {
+                                'Monthly': 'Monthly',
+                                'Quarterly': 'Quarterly',
+                                'Semi-Annual': 'Semi-Annually',
+                                'Annual': 'Annually'
+                            }.get(frequency.capitalize(), None)
+                except Exception as e:
+                    self.logger.debug(f"Exchange {exchange} failed for {ticker}: {str(e)}")
+                    continue
         except Exception as e:
-            logger.error(f"SeekingAlpha error for {ticker}: {str(e)}")
+            self.logger.error(f"SeekingAlpha error for {ticker}: {str(e)}")
         return None
 
     def get_marketbeat_info(self, ticker: str) -> Optional[str]:
-        """Get dividend frequency information from MarketBeat"""
+        """Get dividend information from MarketBeat with multi-exchange support"""
         try:
-            url = f"https://www.marketbeat.com/stocks/NYSE/{ticker}/dividend/"
-            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
+            exchanges = ['NYSE', 'NASDAQ', 'AMEX']
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
             
-            frequency_div = soup.find('div', text=re.compile(r'Dividend Frequency'))
-            if frequency_div:
-                frequency = frequency_div.find_next('div').text.strip().lower()
-                if 'month' in frequency:
-                    return 'Monthly'
-                elif 'quarter' in frequency:
-                    return 'Quarterly'
-                elif 'semi' in frequency:
-                    return 'Semi-Annually'
-                elif 'year' in frequency or 'annual' in frequency:
-                    return 'Annually'
+            for exchange in exchanges:
+                try:
+                    url = f"https://www.marketbeat.com/stocks/{exchange}/{ticker}/dividend/"
+                    response = requests.get(url, headers=headers, timeout=10)
+                    
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, 'html.parser')
+                        frequency_div = soup.find(text=re.compile(r'Dividend Frequency', re.IGNORECASE))
+                        
+                        if frequency_div:
+                            frequency = frequency_div.find_next('div').text.strip().lower()
+                            if 'month' in frequency:
+                                return 'Monthly'
+                            elif 'quarter' in frequency:
+                                return 'Quarterly'
+                            elif 'semi' in frequency or 'semi-annual' in frequency:
+                                return 'Semi-Annually'
+                            elif 'year' in frequency or 'annual' in frequency:
+                                return 'Annually'
+                except Exception as e:
+                    self.logger.debug(f"Exchange {exchange} failed for {ticker}: {str(e)}")
+                    continue
         except Exception as e:
-            logger.error(f"MarketBeat error for {ticker}: {str(e)}")
+            self.logger.error(f"MarketBeat error for {ticker}: {str(e)}")
         return None
 
     def determine_dividend_frequency(self, ticker: str) -> str:
-        """Determine dividend payment frequency using multiple sources"""
+        """Determine dividend payment frequency using multiple methods"""
         try:
             stock = yf.Ticker(ticker)
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=365*2)
-            dividend_history = stock.history(start=start_date, end=end_date)['Dividends']
-            dividend_history = dividend_history[dividend_history > 0]
+            start_date = end_date - timedelta(days=365*2)  # 2 years of history
+
+            # Get dividend history
+            try:
+                dividend_history = stock.history(start=start_date, end=end_date)['Dividends']
+                dividend_history = dividend_history[dividend_history > 0]
+            except Exception:
+                try:
+                    dividend_history = stock.dividends
+                    if dividend_history is not None:
+                        dividend_history = dividend_history[dividend_history > 0]
+                    else:
+                        dividend_history = pd.Series()
+                except Exception:
+                    dividend_history = pd.Series()
+
+            # Special handling for ETFs
+            info = stock.info
+            is_etf = info.get('quoteType', '').upper() == 'ETF'
             
             if len(dividend_history) == 0:
+                if is_etf and info.get('dividendRate'):
+                    # For ETFs, try to determine frequency from dividend rate
+                    annual_rate = info.get('dividendRate', 0)
+                    latest_price = info.get('regularMarketPrice', 0)
+                    if annual_rate > 0 and latest_price > 0:
+                        dividend_yield = (annual_rate / latest_price) * 100
+                        if dividend_yield > 7:  # High-yield ETF threshold
+                            return 'Monthly'
                 return 'No Dividends'
-            
+
+            # Calculate time between dividends
             dividend_dates = dividend_history.index
             days_between = [(dividend_dates[i] - dividend_dates[i-1]).days 
                           for i in range(1, len(dividend_dates))]
             
             if not days_between:
+                if is_etf:
+                    # Additional ETF-specific checks
+                    frequency_hints = [
+                        self.get_seeking_alpha_info(ticker),
+                        self.get_marketbeat_info(ticker)
+                    ]
+                    valid_frequencies = [f for f in frequency_hints if f]
+                    if valid_frequencies:
+                        return max(set(valid_frequencies), key=valid_frequencies.count)
                 return 'Unknown'
-            
+
             avg_days = np.mean(days_between)
             std_days = np.std(days_between)
-            
-            if 25 <= avg_days <= 35 and std_days < 10:
-                historical_frequency = 'Monthly'
-            elif 85 <= avg_days <= 95 and std_days < 15:
-                historical_frequency = 'Quarterly'
-            elif 175 <= avg_days <= 185 and std_days < 20:
-                historical_frequency = 'Semi-Annually'
-            elif 360 <= avg_days <= 370 and std_days < 30:
-                historical_frequency = 'Annually'
+
+            # Determine frequency with flexible thresholds
+            if is_etf:
+                # More lenient thresholds for ETFs
+                if 20 <= avg_days <= 40 and std_days < 15:
+                    return 'Monthly'
+                elif 80 <= avg_days <= 100 and std_days < 20:
+                    return 'Quarterly'
+                elif 170 <= avg_days <= 190 and std_days < 25:
+                    return 'Semi-Annually'
+                elif 355 <= avg_days <= 375 and std_days < 35:
+                    return 'Annually'
             else:
-                historical_frequency = 'Irregular'
-            
-            yahoo_frequency = stock.info.get('payoutFrequency')
-            if yahoo_frequency:
-                yahoo_frequency = {1: 'Annually', 2: 'Semi-Annually', 
-                                 4: 'Quarterly', 12: 'Monthly'}.get(yahoo_frequency, 'Unknown')
-            
-            frequencies = [f for f in [
-                historical_frequency,
-                yahoo_frequency,
+                # Stricter thresholds for stocks
+                if 25 <= avg_days <= 35 and std_days < 10:
+                    return 'Monthly'
+                elif 85 <= avg_days <= 95 and std_days < 15:
+                    return 'Quarterly'
+                elif 175 <= avg_days <= 185 and std_days < 20:
+                    return 'Semi-Annually'
+                elif 360 <= avg_days <= 370 and std_days < 30:
+                    return 'Annually'
+
+            # If standard detection fails, try alternative sources
+            frequency_hints = [
                 self.get_seeking_alpha_info(ticker),
                 self.get_marketbeat_info(ticker)
-            ] if f and f != 'Unknown' and f != 'Irregular']
+            ]
+            valid_frequencies = [f for f in frequency_hints if f]
             
-            return max(set(frequencies), key=frequencies.count) if frequencies else historical_frequency
+            if valid_frequencies:
+                return max(set(valid_frequencies), key=valid_frequencies.count)
+            
+            return 'Irregular'
+
         except Exception as e:
-            logger.error(f"Frequency determination error: {str(e)}")
+            self.logger.error(f"Frequency determination error for {ticker}: {str(e)}")
             return 'Unknown'
+
+    def get_etf_specific_data(self, ticker: str) -> Dict:
+        """Get ETF-specific dividend data"""
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            if info.get('quoteType', '').upper() != 'ETF':
+                return {}
+                
+            return {
+                'expense_ratio': info.get('expenseRatio', 0) * 100 if info.get('expenseRatio') else None,
+                'category': info.get('category', 'Unknown'),
+                'total_assets': info.get('totalAssets', 0),
+                'yield_30d': info.get('yield30days', 0) * 100 if info.get('yield30days') else None,
+            }
+        except Exception as e:
+            self.logger.error(f"ETF data error for {ticker}: {str(e)}")
+            return {}
 
     def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
         """Evaluate dividend health and return recommendation"""
