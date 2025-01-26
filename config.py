@@ -44,7 +44,7 @@ class Config:
 
     # Dividend Analysis Settings
     DIVIDEND_DEFAULTS = {
-        'DEFAULT_DIVIDEND_STOCKS': ['CLM'],
+        'DEFAULT_DIVIDEND_STOCKS': CLM,
         'REIT_TICKERS': ['O'],
         'YIELD_THRESHOLDS': {
             'HEALTHY_MIN': 3,
