@@ -68,23 +68,122 @@ class DividendAnalyzer:
             return f"${value/1e6:.2f}M"
         else:
             return f"${value:,.2f}"
-
-    def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
-        """Get specific dividend data for ETFs"""
+    # Add the Polygon.io method here, right after __init__ and before other analysis methods
+    def _get_polygon_etf_data(self, ticker: str) -> Optional[Dict]:
+        """Fetch ETF data from Polygon.io as a backup source"""
         try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            if info.get('quoteType', '').upper() != 'ETF':
+            if not hasattr(self.config, 'POLYGON_API_KEY'):
+                logger.debug(f"Polygon.io API key not configured for {ticker}")
                 return None
                 
-            # Get trailing 12 months of dividend history
+            headers = {
+                'Authorization': f'Bearer {self.config.POLYGON_API_KEY}'
+            }
+            
+            try:
+                # Get last dividend
+                div_url = f"https://api.polygon.io/v3/reference/dividends/{ticker}?limit=1"
+                div_response = requests.get(div_url, headers=headers, timeout=10)
+                div_data = div_response.json() if div_response.status_code == 200 else None
+                
+                # Get current price
+                price_url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev"
+                price_response = requests.get(price_url, headers=headers, timeout=10)
+                price_data = price_response.json() if price_response.status_code == 200 else None
+                
+                if not div_data or not price_data:
+                    logger.debug(f"No complete Polygon.io data available for {ticker}")
+                    return None
+                    
+                latest_div = div_data.get('results', [{}])[0]
+                latest_price = price_data.get('results', [{}])[0].get('c', 0)
+                
+                # Calculate annual dividend and yield
+                cash_amount = latest_div.get('cash_amount', 0)
+                frequency = latest_div.get('frequency', 'quarterly')
+                multiplier = {
+                    'monthly': 12,
+                    'quarterly': 4,
+                    'semi-annual': 2,
+                    'annual': 1
+                }.get(frequency.lower(), 4)
+                
+                annual_dividend = cash_amount * multiplier
+                div_yield = (annual_dividend / latest_price * 100) if latest_price > 0 else 0
+                
+                return {
+                    'dividendYield': div_yield,
+                    'currentPrice': latest_price,
+                    'lastDividendValue': cash_amount,
+                    'dividendRate': annual_dividend
+                }
+                
+            except requests.exceptions.RequestException as e:
+                logger.debug(f"Polygon.io API request failed for {ticker}: {str(e)}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Unexpected error in Polygon.io data fetch for {ticker}: {str(e)}")
+            return None 
+    
+    def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
+    """Get ETF dividend data with fallback to Polygon.io"""
+    try:
+        # Existing yfinance initialization
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # Keep existing ETF type check
+        if info.get('quoteType', '').upper() != 'ETF':
+            logger.debug(f"{ticker} is not identified as an ETF")
+            return None
+            
+        try:
+            # Existing yfinance dividend history logic
             end_date = datetime.now()
             start_date = end_date - timedelta(days=365)
             dividend_history = stock.history(start=start_date, end=end_date)['Dividends']
             dividend_history = dividend_history[dividend_history > 0]
             
-            # Calculate actual dividend metrics
+            # If yfinance data is empty, try Polygon.io as fallback
+            if dividend_history.empty:
+                logger.debug(f"No yfinance dividend history for {ticker}, attempting Polygon.io")
+                polygon_data = self._get_polygon_etf_data(ticker)
+                
+                if polygon_data:
+                    # Merge Polygon.io data with existing yfinance metadata
+                    polygon_data.update({
+                        'marketCap': info.get('marketCap', 0),
+                        'sector': info.get('sector', 'Unknown'),
+                        'industry': info.get('industry', 'Unknown'),
+                        'longName': info.get('longName', ticker),
+                        'payoutRatio': 1.0,
+                        'lastUpdated': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                    return polygon_data
+                
+                # Keep existing fallback to minimal yfinance data
+                if info.get('regularMarketPrice') and info.get('dividendRate'):
+                    logger.debug(f"Using minimal yfinance data for {ticker}")
+                    current_price = info.get('regularMarketPrice')
+                    div_rate = info.get('dividendRate')
+                    return {
+                        'dividendYield': (div_rate / current_price * 100) if current_price > 0 else 0,
+                        'currentPrice': current_price,
+                        'lastDividendValue': div_rate / 12,  # Monthly estimate
+                        'marketCap': info.get('marketCap', 0),
+                        'sector': info.get('sector', 'Unknown'),
+                        'industry': info.get('industry', 'Unknown'),
+                        'longName': info.get('longName', ticker),
+                        'payoutRatio': 1.0,
+                        'dividendRate': div_rate,
+                        'lastUpdated': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                
+                logger.debug(f"No dividend data available from any source for {ticker}")
+                return None
+            
+            # Keep existing successful yfinance data path
             total_annual_dividend = dividend_history.sum()
             current_price = info.get('regularMarketPrice', info.get('currentPrice', 0))
             actual_yield = (total_annual_dividend / current_price * 100) if current_price > 0 else 0
@@ -97,13 +196,18 @@ class DividendAnalyzer:
                 'sector': info.get('sector', 'Unknown'),
                 'industry': info.get('industry', 'Unknown'),
                 'longName': info.get('longName', ticker),
-                'payoutRatio': 1.0,  # ETFs typically distribute all income
-                'dividendRate': total_annual_dividend
+                'payoutRatio': 1.0,
+                'dividendRate': total_annual_dividend,
+                'lastUpdated': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             }
-                
-        except Exception as e:
-            logger.error(f"ETF data error for {ticker}: {str(e)}")
+            
+        except (KeyError, IndexError) as e:
+            logger.error(f"Data structure error for {ticker}: {str(e)}")
             return None
+            
+    except Exception as e:
+        logger.error(f"Failed to analyze ETF {ticker}: {str(e)}")
+        return None    
 
     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
         """Get dividend information from Seeking Alpha with multi-exchange support"""
