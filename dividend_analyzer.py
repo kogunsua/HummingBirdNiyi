@@ -127,7 +127,7 @@ class DividendAnalyzer:
             return None 
     
     def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
-    """Get ETF dividend data with fallback to Polygon.io"""
+        """Get ETF dividend data with fallback to Polygon.io"""
     try:
         # Existing yfinance initialization
         stock = yf.Ticker(ticker)
