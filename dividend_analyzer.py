@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import logging
 from datetime import datetime, timedelta
-import re
+import requests
 from typing import List, Dict, Optional, Tuple
 from config import Config
 
@@ -236,9 +236,20 @@ class DividendAnalyzer:
         for ticker in tickers:
             try:
                 with st.spinner(f'Analyzing {ticker}...'):
+                    # First try yfinance
+                    try:
                     stock = yf.Ticker(ticker)
                     info = stock.info
                     
+                    if not info or 'dividendYield' not in info:
+                       # Try alternative source (Alpha Vantage)
+                       if hasattr(self.config, 'ALPHA_VANTAGE_API_KEY'):
+                          dividend_data = self._get_alpha_vantage_data(ticker)     
+                          if dividend_data:
+                              info = dividend_data
+                        else:    
+                            raise ValueError(f"No dividend data found for {ticker}")   
+
                     if info.get('dividendYield') and info.get('dividendYield') > 0:
                         dividend_frequency = self.determine_dividend_frequency(ticker)
                         historical_dividends = stock.history(period='1y')['Dividends']
@@ -278,11 +289,63 @@ class DividendAnalyzer:
                         
                         stock_data.append(data)
             except Exception as e:
+
+                logger.error(f"Error processing {ticker}: {str(e)}")
+                st.warning(f"Could not fetch data for {ticker} using primary source. Error: {str(e)}")
+                continue
+            except Exception as e:
                 logger.error(f"Error processing {ticker}: {str(e)}")
                 st.warning(f"Could not fetch data for {ticker}")
-        
+                
         return pd.DataFrame(stock_data)
-
+    def _get_alpha_vantage_data(self, ticker: str) -> Optional[Dict]:
+    """Fetch stock data from Alpha Vantage as a backup source"""
+    try:
+        api_key = self.config.ALPHA_VANTAGE_API_KEY
+        base_url = "https://www.alphavantage.co/query"
+        
+        # Get Overview
+        overview_params = {
+            "function": "OVERVIEW",
+            "symbol": ticker,
+            "apikey": api_key
+        }
+        overview_response = requests.get(base_url, params=overview_params)
+        overview_data = overview_response.json()
+        
+        if not overview_data or "Error Message" in overview_data:
+            return None
+            
+        # Get Global Quote
+        quote_params = {
+            "function": "GLOBAL_QUOTE",
+            "symbol": ticker,
+            "apikey": api_key
+        }
+        quote_response = requests.get(base_url, params=quote_params)
+        quote_data = quote_response.json()
+        
+        if not quote_data or "Error Message" in quote_data:
+            return None
+            
+        current_price = float(quote_data.get("Global Quote", {}).get("05. price", 0))
+        dividend_amount = float(overview_data.get("DividendPerShare", 0))
+        
+        return {
+            'dividendYield': (dividend_amount / current_price) if current_price > 0 else 0,
+            'currentPrice': current_price,
+            'lastDividendValue': dividend_amount,
+            'marketCap': float(overview_data.get("MarketCapitalization", 0)),
+            'sector': overview_data.get("Sector", "Unknown"),
+            'industry': overview_data.get("Industry", "Unknown"),
+            'longName': overview_data.get("Name", ticker),
+            'payoutRatio': float(overview_data.get("PayoutRatio", 0))
+        }
+        
+    except Exception as e:
+        logger.error(f"Alpha Vantage API error for {ticker}: {str(e)}")
+        return None
+     
     def display_dividend_analysis(self, tickers: Optional[List[str]] = None):
         """Display dividend analysis results"""
         if not tickers:
@@ -290,7 +353,18 @@ class DividendAnalyzer:
         
         stock_data = self.get_stock_data(tickers)
         if stock_data.empty:
-            st.error("No dividend information found")
+            st.error("No dividend information found for any of the provided stocks")
+            st.info("""
+            Possible reasons:
+            - Stock symbol may have changed or been delisted
+            - Stock may not currently pay dividends
+            - Data source may be temporarily unavailable         
+
+            Try checking:
+            1. Current stock symbol on your broker's platform
+            2. Company's investor relations website
+            3. Alternative stock symbols or tickers
+            """)                               
             return
         
         self._display_metrics(stock_data)
@@ -392,7 +466,6 @@ class DividendAnalyzer:
 def filter_monthly_dividend_stocks(data: pd.DataFrame) -> pd.DataFrame:
     """Filter and return monthly dividend stocks from the provided data."""
     return data[data['Dividend Frequency'] == 'Monthly']
-   
                                                                 
                                                             
                                                             
