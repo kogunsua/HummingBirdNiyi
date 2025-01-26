@@ -69,6 +69,42 @@ class DividendAnalyzer:
         else:
             return f"${value:,.2f}"
 
+    def get_etf_dividend_data(self, ticker: str) -> Optional[Dict]:
+        """Get specific dividend data for ETFs"""
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            
+            if info.get('quoteType', '').upper() != 'ETF':
+                return None
+                
+            # Get trailing 12 months of dividend history
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=365)
+            dividend_history = stock.history(start=start_date, end=end_date)['Dividends']
+            dividend_history = dividend_history[dividend_history > 0]
+            
+            # Calculate actual dividend metrics
+            total_annual_dividend = dividend_history.sum()
+            current_price = info.get('regularMarketPrice', info.get('currentPrice', 0))
+            actual_yield = (total_annual_dividend / current_price * 100) if current_price > 0 else 0
+            
+            return {
+                'dividendYield': actual_yield,
+                'currentPrice': current_price,
+                'lastDividendValue': dividend_history.iloc[-1] if not dividend_history.empty else 0,
+                'marketCap': info.get('marketCap', 0),
+                'sector': info.get('sector', 'Unknown'),
+                'industry': info.get('industry', 'Unknown'),
+                'longName': info.get('longName', ticker),
+                'payoutRatio': 1.0,  # ETFs typically distribute all income
+                'dividendRate': total_annual_dividend
+            }
+                
+        except Exception as e:
+            logger.error(f"ETF data error for {ticker}: {str(e)}")
+            return None
+
     def get_seeking_alpha_info(self, ticker: str) -> Optional[str]:
         """Get dividend information from Seeking Alpha with multi-exchange support"""
         try:
@@ -139,30 +175,21 @@ class DividendAnalyzer:
         """Determine dividend payment frequency using multiple methods"""
         try:
             stock = yf.Ticker(ticker)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=365*2)  # 2 years of history
-
+            info = stock.info
+            is_etf = info.get('quoteType', '').upper() == 'ETF'
+            
             # Get dividend history
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=365*2)
+            
             try:
                 dividend_history = stock.history(start=start_date, end=end_date)['Dividends']
                 dividend_history = dividend_history[dividend_history > 0]
             except Exception:
-                try:
-                    dividend_history = stock.dividends
-                    if dividend_history is not None:
-                        dividend_history = dividend_history[dividend_history > 0]
-                    else:
-                        dividend_history = pd.Series()
-                except Exception:
-                    dividend_history = pd.Series()
+                dividend_history = pd.Series()
 
-            # Special handling for ETFs
-            info = stock.info
-            is_etf = info.get('quoteType', '').upper() == 'ETF'
-            
             if len(dividend_history) == 0:
                 if is_etf and info.get('dividendRate'):
-                    # For ETFs, try to determine frequency from dividend rate
                     annual_rate = info.get('dividendRate', 0)
                     latest_price = info.get('regularMarketPrice', 0)
                     if annual_rate > 0 and latest_price > 0:
@@ -178,7 +205,6 @@ class DividendAnalyzer:
             
             if not days_between:
                 if is_etf:
-                    # Additional ETF-specific checks
                     frequency_hints = [
                         self.get_seeking_alpha_info(ticker),
                         self.get_marketbeat_info(ticker)
@@ -191,9 +217,8 @@ class DividendAnalyzer:
             avg_days = np.mean(days_between)
             std_days = np.std(days_between)
 
-            # Determine frequency with flexible thresholds
+            # More lenient thresholds for ETFs
             if is_etf:
-                # More lenient thresholds for ETFs
                 if 20 <= avg_days <= 40 and std_days < 15:
                     return 'Monthly'
                 elif 80 <= avg_days <= 100 and std_days < 20:
@@ -203,7 +228,6 @@ class DividendAnalyzer:
                 elif 355 <= avg_days <= 375 and std_days < 35:
                     return 'Annually'
             else:
-                # Stricter thresholds for stocks
                 if 25 <= avg_days <= 35 and std_days < 10:
                     return 'Monthly'
                 elif 85 <= avg_days <= 95 and std_days < 15:
@@ -213,40 +237,11 @@ class DividendAnalyzer:
                 elif 360 <= avg_days <= 370 and std_days < 30:
                     return 'Annually'
 
-            # If standard detection fails, try alternative sources
-            frequency_hints = [
-                self.get_seeking_alpha_info(ticker),
-                self.get_marketbeat_info(ticker)
-            ]
-            valid_frequencies = [f for f in frequency_hints if f]
-            
-            if valid_frequencies:
-                return max(set(valid_frequencies), key=valid_frequencies.count)
-            
             return 'Irregular'
 
         except Exception as e:
-            self.logger.error(f"Frequency determination error for {ticker}: {str(e)}")
+            logger.error(f"Frequency determination error for {ticker}: {str(e)}")
             return 'Unknown'
-
-    def get_etf_specific_data(self, ticker: str) -> Dict:
-        """Get ETF-specific dividend data"""
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            
-            if info.get('quoteType', '').upper() != 'ETF':
-                return {}
-                
-            return {
-                'expense_ratio': info.get('expenseRatio', 0) * 100 if info.get('expenseRatio') else None,
-                'category': info.get('category', 'Unknown'),
-                'total_assets': info.get('totalAssets', 0),
-                'yield_30d': info.get('yield30days', 0) * 100 if info.get('yield30days') else None,
-            }
-        except Exception as e:
-            self.logger.error(f"ETF data error for {ticker}: {str(e)}")
-            return {}
 
     def evaluate_dividend_health(self, data: Dict) -> Tuple[str, List[str], str]:
         """Evaluate dividend health and return recommendation"""
@@ -254,38 +249,53 @@ class DividendAnalyzer:
             dividend_yield = data['Dividend Yield (%)']
             payout_ratio = data['Payout Ratio']
             ticker = data['Ticker']
-            
-            stock = yf.Ticker(ticker)
-            sector = stock.info.get('sector', '').lower()
-            is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']
+            is_etf = data.get('Is ETF', False)
             
             score = 0
             reasons = []
             
-            # Yield Analysis
-            if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
-                score -= 2
-                reasons.append("High yield may be unsustainable")
-            elif dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                score -= 1
-                reasons.append("Yield is above average")
-            elif self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
-                score += 1
-                reasons.append("Healthy yield range")
+            if is_etf:
+                # ETF-specific analysis
+                if dividend_yield > 15:
+                    score -= 2
+                    reasons.append("Extremely high yield for an ETF - may indicate risk")
+                elif dividend_yield > 10:
+                    score -= 1
+                    reasons.append("High yield ETF - monitor closely")
+                elif 5 <= dividend_yield <= 10:
+                    score += 1
+                    reasons.append("Reasonable yield range for an ETF")
+                
+                reasons.append("ETF distributions may vary based on underlying holdings")
+            else:
+                # Regular stock analysis
+                if dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['WARNING']:
+                    score -= 2
+                    reasons.append("High yield may be unsustainable")
+                elif dividend_yield > self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+                    score -= 1
+                    reasons.append("Yield is above average")
+                elif self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MIN'] <= dividend_yield <= self.config.DIVIDEND_DEFAULTS['YIELD_THRESHOLDS']['HEALTHY_MAX']:
+                    score += 1
+                    reasons.append("Healthy yield range")
+                
+                # Payout Analysis for stocks
+                stock = yf.Ticker(ticker)
+                sector = stock.info.get('sector', '').lower()
+                is_reit = 'real estate' in sector or ticker in self.config.DIVIDEND_DEFAULTS['REIT_TICKERS']
+                max_payout = self.config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
+                
+                if payout_ratio > max_payout:
+                    score -= 2
+                    reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
+                elif payout_ratio > max_payout * 0.8:
+                    score -= 1
+                    reasons.append("Payout ratio nearing upper limit")
+                elif 0 < payout_ratio <= max_payout * 0.8:
+                    score += 1
+                    reasons.append("Healthy payout ratio")
             
-            # Payout Analysis
-            max_payout = self.config.DIVIDEND_DEFAULTS['PAYOUT_RATIOS']['REIT_MAX' if is_reit else 'NORMAL_MAX']
-            if payout_ratio > max_payout:
-                score -= 2
-                reasons.append(f"High payout ratio for {'REIT' if is_reit else 'stock'}")
-            elif payout_ratio > max_payout * 0.8:
-                score -= 1
-                reasons.append("Payout ratio nearing upper limit")
-            elif 0 < payout_ratio <= max_payout * 0.8:
-                score += 1
-                reasons.append("Healthy payout ratio")
-            
-            # Growth History
+            # Common analysis for both stocks and ETFs
             years_of_growth = data['Years of Growth']
             if years_of_growth >= 5:
                 score += 2
@@ -294,7 +304,6 @@ class DividendAnalyzer:
                 score += 1
                 reasons.append("Moderate dividend growth history")
             
-            # Market Cap
             market_cap = data['Market Cap']
             if market_cap >= 10e9:
                 score += 1
