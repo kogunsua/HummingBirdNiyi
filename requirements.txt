@@ -20,3 +20,4 @@ newsapi-python
 nltk
 textblob
 beautifulsoup4 
+matplotlib
