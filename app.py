@@ -1,4 +1,3 @@
-#appy.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -22,7 +21,8 @@ from forecasting import (
     create_forecast_plot,
     display_metrics,
     display_confidence_analysis,
-    add_technical_indicators
+    add_technical_indicators,
+    display_forecast_results
 )
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
@@ -40,6 +40,7 @@ SentimentSource = Literal["Multi-Source", "GDELT", "Yahoo Finance", "News API"]
 
 @dataclass
 class UserInputs:
+    """Data class for user inputs"""
     asset_type: AssetType
     symbol: str
     periods: int
@@ -47,12 +48,14 @@ class UserInputs:
     end_date: datetime
 
 class AppLogger:
+    """Logger configuration for the application"""
     def __init__(self, log_dir: str = "logs"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
         self.setup_logging()
 
     def setup_logging(self) -> None:
+        """Configure logging with rotation"""
         log_file = self.log_dir / "app.log"
         handler = RotatingFileHandler(
             log_file,
@@ -70,6 +73,7 @@ class AppLogger:
         logger.addHandler(logging.StreamHandler(sys.stdout))
 
 class HummingBirdUI:
+    """Main UI class for the HummingBird application"""
     def __init__(self):
         self.config = Config()
         self.logger = logging.getLogger(__name__)
@@ -410,8 +414,4 @@ class HummingBirdUI:
 def main():
     """Application entry point"""
     logger = AppLogger()
-    app = HummingBirdUI()
-    app.run()
-
-if __name__ == "__main__":
-    main()
+    app = H
