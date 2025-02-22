@@ -1,11 +1,10 @@
-#app.py
+#appy.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
 import sys
 from typing import Optional, Tuple, Dict
 import pandas as pd
-import traceback
 import yfinance as yf
 
 # Import local modules
@@ -201,4 +200,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                
