@@ -269,7 +269,7 @@ def main():
         forecast_tab, dividend_tab, treasury_tab = st.tabs([
             "📈 Price Forecast", 
             "💰 Dividend Analysis",
-            "💰 Daily Treasury Statement"
+            "🏦 Daily Treasury Statement"
         ])
         
         with forecast_tab:
