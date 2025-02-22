@@ -1,4 +1,4 @@
-#appy.py
+#app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -131,47 +131,142 @@ def get_user_inputs() -> Tuple[str, str, int]:
     
     return asset_type, symbol, periods
 
-def get_dividend_inputs() -> list:
-    """Get user inputs for dividend analysis"""
-    st.markdown("### 💰 Monthly Dividend Stock Analysis")
-    
-    # Allow users to input custom tickers
-    custom_tickers = st.text_input(
-        "Enter Stock Symbol",
-        "MAIN",
-        help="Enter stock symbol (e.g.MAIN)"
-    )
-    
-    # Convert input string to list and clean up
-    tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
-    return tickers
-
-def get_sentiment_settings() -> Tuple[int, float, str]:
-    """Get user settings for sentiment analysis"""
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        sentiment_period = st.slider(
-            "Sentiment Analysis Period (days)",
-            7, 90, 30,
-            help="Historical period for sentiment analysis"
+def update_treasury_tab(treasury_tab):
+    """Handle Treasury tab display and analysis"""
+    with treasury_tab:
+        st.title("Treasury Statement Analysis")
+        
+        # Create columns for inputs
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            end_date = st.date_input(
+                "End Date",
+                datetime.now().date(),
+                max_value=datetime.now().date()
+            )
+        
+        with col2:
+            days_back = st.slider(
+                "Analysis Period (days)",
+                30, 365, 90,
+                help="Select the number of days to analyze"
+            )
+            
+        with col3:
+            frequency = st.selectbox(
+                "Data Frequency",
+                ["daily", "weekly", "seven_day_ma"],
+                format_func=lambda x: x.replace("_", " ").title(),
+                help="Select data frequency for analysis"
+            )
+        
+        start_date = end_date - timedelta(days=days_back)
+        
+        # Category selection
+        categories = st.multiselect(
+            "Select Categories to Analyze (max 9)",
+            TreasuryDataFetcher().program_categories.keys(),
+            default=['SNAP', 'NIH', 'VA'],
+            max_selections=9,
+            help="Choose up to 9 categories to analyze"
         )
-    
-    with col2:
-        sentiment_weight = st.slider(
-            "Sentiment Impact Weight",
-            0.0, 1.0, 0.5,
-            help="Weight of sentiment analysis in the forecast (0 = none, 1 = maximum)"
-        )
-    
-    with col3:
-        sentiment_source = st.selectbox(
-            "Sentiment Data Source",
-            ["Multi-Source", "GDELT", "Yahoo Finance", "News API"],
-            help="Choose the source for sentiment analysis"
-        )
-    
-    return sentiment_period, sentiment_weight, sentiment_source
+        
+        # Analysis button
+        if st.button("📊 Analyze Treasury Data"):
+            try:
+                with st.spinner("Fetching Treasury data..."):
+                    # Initialize TreasuryDataFetcher
+                    fetcher = TreasuryDataFetcher()
+                    
+                    # Perform analysis
+                    df, alerts, recommendations = fetcher.analyze_treasury_data(
+                        start_date,
+                        end_date,
+                        categories,
+                        frequency
+                    )
+                    
+                    if df is not None:
+                        # Display summary metrics
+                        st.markdown("### 📈 Key Metrics")
+                        metric_col1, metric_col2, metric_col3 = st.columns(3)
+                        
+                        with metric_col1:
+                            st.metric(
+                                "Total Records",
+                                len(df)
+                            )
+                        
+                        with metric_col2:
+                            st.metric(
+                                "Date Range",
+                                f"{df['record_date'].min().strftime('%Y-%m-%d')} to {df['record_date'].max().strftime('%Y-%m-%d')}"
+                            )
+                        
+                        with metric_col3:
+                            if 'current_month_gross_rcpt_amt' in df.columns:
+                                total_receipts = df['current_month_gross_rcpt_amt'].sum()
+                                st.metric(
+                                    "Total Receipts",
+                                    f"${total_receipts:,.2f}"
+                                )
+                        
+                        # Display alerts and recommendations
+                        if alerts:
+                            st.markdown("### ⚠️ Alerts")
+                            for alert in alerts:
+                                st.markdown(f"- {alert['message']}")
+                        
+                        if recommendations:
+                            st.markdown("### 💡 Recommendations")
+                            for rec in recommendations:
+                                st.markdown(f"- {rec}")
+                        
+                        # Display visualizations
+                        st.markdown("### 📊 Treasury Data Visualization")
+                        
+                        # Create tabs for different visualizations
+                        receipts_tab, outlays_tab = st.tabs(["Receipts", "Outlays"])
+                        
+                        with receipts_tab:
+                            fig_receipts = fetcher.plot_treasury_visualization(
+                                df,
+                                frequency=frequency,
+                                categories=categories,
+                                plot_type='receipts'
+                            )
+                            st.pyplot(fig_receipts)
+                        
+                        with outlays_tab:
+                            fig_outlays = fetcher.plot_treasury_visualization(
+                                df,
+                                frequency=frequency,
+                                categories=categories,
+                                plot_type='outlays'
+                            )
+                            st.pyplot(fig_outlays)
+                        
+                        # Display raw data
+                        with st.expander("🔍 View Raw Data"):
+                            st.dataframe(df)
+                            
+                            # Add download button
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="Download Treasury Data",
+                                data=csv,
+                                file_name="treasury_data.csv",
+                                mime="text/csv",
+                            )
+                    
+                    else:
+                        st.error("Failed to fetch Treasury data. Please try again.")
+            
+            except Exception as e:
+                logger.error(f"Treasury analysis error: {str(e)}")
+                st.error("An error occurred during Treasury analysis. Please try again.")
+                st.exception(e)
 
 def process_forecast(
     price_data: pd.DataFrame,
@@ -259,7 +354,7 @@ def main():
             layout="wide"
         )
 
-        #Create Config instance at the start - ADD  THIS LINE
+        # Create Config instance at the start
         config = Config()
         
         # Display header
@@ -291,8 +386,29 @@ def main():
             # Get sentiment settings if needed
             sentiment_data = None
             if forecast_type == "Price + Market Sentiment":
-                sentiment_period, sentiment_weight, sentiment_source = get_sentiment_settings()
-                display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source)
+                sentiment_period = st.slider(
+                    "Sentiment Analysis Period (days)",
+                    7, 90, 30,
+                    help="Historical period for sentiment analysis"
+                )
+                
+                sentiment_weight = st.slider(
+                    "Sentiment Impact Weight",
+                    0.0, 1.0, 0.5,
+                    help="Weight of sentiment analysis in the forecast"
+                )
+                
+                sentiment_source = st.selectbox(
+                    "Sentiment Data Source",
+                    ["Multi-Source", "GDELT", "Yahoo Finance", "News API"],
+                    help="Choose the source for sentiment analysis"
+                )
+                
+                display_sentiment_impact_analysis(
+                    sentiment_period,
+                    sentiment_weight,
+                    sentiment_source
+                )
             
             # Generate Forecast button
             if st.button("🚀 Generate Forecast"):
@@ -306,22 +422,22 @@ def main():
                             else fetcher.get_crypto_data(symbol)
                         )
                         
-                        # Get economic indicator data if selected
-                        if selected_indicator != 'None':
-                            economic_indicators = EconomicIndicators()
-                            economic_data = economic_indicators.get_indicator_data(selected_indicator)
-                            if economic_data is not None:
-                                display_economic_indicators(economic_data, selected_indicator, economic_indicators)
-                        
                         # Get sentiment data if selected
                         if forecast_type == "Price + Market Sentiment":
-                            start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+                            start_date = (
+                                datetime.now() - timedelta(days=sentiment_period)
+                            ).strftime("%Y-%m-%d")
                             end_date = datetime.now().strftime("%Y-%m-%d")
                             
                             with st.spinner(f'Fetching sentiment data from {sentiment_source}...'):
-                                if sentiment_source == "GDELT":
+                                if sentiment_source ==
+
+if sentiment_source == "GDELT":
                                     gdelt_analyzer = GDELTAnalyzer()
-                                    sentiment_data = gdelt_analyzer.fetch_sentiment_data(start_date, end_date)
+                                    sentiment_data = gdelt_analyzer.fetch_sentiment_data(
+                                        start_date,
+                                        end_date
+                                    )
                                 else:
                                     analyzer = MultiSourceSentimentAnalyzer()
                                     sentiment_data = get_sentiment_data(
@@ -334,7 +450,10 @@ def main():
                         
                         if price_data is not None:
                             if selected_model != "Prophet":
-                                st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
+                                st.warning(
+                                    f"{selected_model} model is currently under development. "
+                                    "Using Prophet for forecasting instead."
+                                )
                             
                             # Process forecast
                             with st.spinner('Generating forecast...'):
@@ -382,15 +501,15 @@ def main():
             custom_tickers = st.text_input(
                 "Enter Stock Symbol",
                 Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS'],
-                help="Enter stock symbol (e.g.MAIN)"
+                help="Enter stock symbol (e.g., MAIN)"
             )
             
             # Analyze button
             if st.button("🔍 Analyze Dividends"):
                 try:
-                    # Initialize DividendAnalyzer with Config - MODIFY THESE LINES
+                    # Initialize DividendAnalyzer with Config
                     analyzer = DividendAnalyzer()
-                    analyzer.config = config  # Add this line
+                    analyzer.config = config
                     tickers = [t.strip().upper() for t in custom_tickers.split(',')]
                     analyzer.display_dividend_analysis(tickers)
                 except Exception as e:
@@ -399,97 +518,7 @@ def main():
                     st.exception(e)
 
         with treasury_tab:
-            st.title("Treasury Statement Analysis")
-            
-            # Create columns for date inputs
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                end_date = st.date_input(
-                    "End Date",
-                    datetime.now().date(),
-                    max_value=datetime.now().date()
-                )
-            
-            with col2:
-                days_back = st.slider(
-                    "Analysis Period (days)",
-                    30, 365, 90,
-                    help="Select the number of days to analyze"
-                )
-            
-            start_date = end_date - timedelta(days=days_back)
-            
-            # Initialize TreasuryDataFetcher
-            fetcher = TreasuryDataFetcher()
-            
-            if st.button("📊 Analyze Treasury Data"):
-                try:
-                    with st.spinner("Fetching Treasury data..."):
-                        # Build URL and fetch data
-                        fields = [
-                            'record_date',
-                            'classification_desc',
-                            'current_month_gross_rcpt_amt'
-                        ]
-                        
-                        url = fetcher.build_url(
-                            fields=fields,
-                            start_date=start_date.strftime("%Y-%m-%d"),
-                            end_date=end_date.strftime("%Y-%m-%d")
-                        )
-                        
-                        df = fetcher.fetch_data(url)
-                        
-                        if df is not None:
-                            # Display summary metrics
-                            st.markdown("### 📈 Key Metrics")
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                st.metric(
-                                    "Total Records",
-                                    len(df)
-                                )
-                            
-                            with col2:
-                                st.metric(
-                                    "Date Range",
-                                    f"{df['record_date'].min().strftime('%Y-%m-%d')} to {df['record_date'].max().strftime('%Y-%m-%d')}"
-                                )
-                            
-                            with col3:
-                                total_receipts = df['current_month_gross_rcpt_amt'].sum()
-                                st.metric(
-                                    "Total Receipts",
-                                    f"${total_receipts:,.2f}"
-                                )
-                            
-                            # Display visualization
-                            st.markdown("### 📊 Receipts Visualization")
-                            fig = fetcher.plot_receipts_by_classification(df)
-                            st.pyplot(fig)
-                            
-                            # Display raw data
-                            with st.expander("🔍 View Raw Data"):
-                                st.dataframe(df)
-                                
-                                # Add download button
-                                csv = df.to_csv(index=False)
-                                st.download_button(
-                                    label="Download Treasury Data",
-                                    data=csv,
-                                    file_name="treasury_data.csv",
-                                    mime="text/csv",
-                                )
-                        
-                        else:
-                            st.error("Failed to fetch Treasury data. Please try again.")
-                
-                except Exception as e:
-                    logger.error(f"Treasury analysis error: {str(e)}")
-                    st.error("An error occurred during Treasury analysis. Please try again.")
-                    st.exception(e)
+            update_treasury_tab(treasury_tab)
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}\n{traceback.format_exc()}")
@@ -502,3 +531,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+                                
