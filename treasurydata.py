@@ -1,4 +1,3 @@
-#treasurydata.py
 # treasurydata.py
 # Treasury Data Fetcher Application
 # This application fetches and analyzes data from the U.S. Treasury's Monthly Treasury Statement (MTS) Table 1 API
@@ -297,6 +296,16 @@ class TreasuryDataFetcher:
         except Exception as e:
             print(f"Analysis error: {e}")
             return None, [], []
+
+def plot_receipts_by_classification(self, df: pd.DataFrame):
+        """
+        Alias for backward compatibility - redirects to plot_treasury_visualization
+        """
+        return self.plot_treasury_visualization(
+            df,
+            frequency='daily',
+            plot_type='receipts'
+        )
 
 def main():
     """
