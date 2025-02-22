@@ -1,4 +1,4 @@
-# app.py
+#appy.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -26,6 +26,7 @@ from sentiment_analyzer import (
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+from treasurydata import TreasuryDataFetcher
 
 # Configure logging
 logging.basicConfig(
@@ -265,7 +266,11 @@ def main():
         display_header()
         
         # Create tabs for different analyses
-        forecast_tab, dividend_tab = st.tabs(["📈 Price Forecast", "💰 Dividend Analysis"])
+        forecast_tab, dividend_tab, treasury_tab = st.tabs([
+            "📈 Price Forecast", 
+            "💰 Dividend Analysis",
+            "💰 Daily Treasury Statement"
+        ])
         
         with forecast_tab:
             # Get sidebar inputs
@@ -391,6 +396,99 @@ def main():
                 except Exception as e:
                     logger.error(f"Dividend analysis error: {str(e)}")
                     st.error("An error occurred during dividend analysis. Please try again.")
+                    st.exception(e)
+
+        with treasury_tab:
+            st.title("Treasury Statement Analysis")
+            
+            # Create columns for date inputs
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                end_date = st.date_input(
+                    "End Date",
+                    datetime.now().date(),
+                    max_value=datetime.now().date()
+                )
+            
+            with col2:
+                days_back = st.slider(
+                    "Analysis Period (days)",
+                    30, 365, 90,
+                    help="Select the number of days to analyze"
+                )
+            
+            start_date = end_date - timedelta(days=days_back)
+            
+            # Initialize TreasuryDataFetcher
+            fetcher = TreasuryDataFetcher()
+            
+            if st.button("📊 Analyze Treasury Data"):
+                try:
+                    with st.spinner("Fetching Treasury data..."):
+                        # Build URL and fetch data
+                        fields = [
+                            'record_date',
+                            'classification_desc',
+                            'current_month_gross_rcpt_amt'
+                        ]
+                        
+                        url = fetcher.build_url(
+                            fields=fields,
+                            start_date=start_date.strftime("%Y-%m-%d"),
+                            end_date=end_date.strftime("%Y-%m-%d")
+                        )
+                        
+                        df = fetcher.fetch_data(url)
+                        
+                        if df is not None:
+                            # Display summary metrics
+                            st.markdown("### 📈 Key Metrics")
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric(
+                                    "Total Records",
+                                    len(df)
+                                )
+                            
+                            with col2:
+                                st.metric(
+                                    "Date Range",
+                                    f"{df['record_date'].min().strftime('%Y-%m-%d')} to {df['record_date'].max().strftime('%Y-%m-%d')}"
+                                )
+                            
+                            with col3:
+                                total_receipts = df['current_month_gross_rcpt_amt'].sum()
+                                st.metric(
+                                    "Total Receipts",
+                                    f"${total_receipts:,.2f}"
+                                )
+                            
+                            # Display visualization
+                            st.markdown("### 📊 Receipts Visualization")
+                            fig = fetcher.plot_receipts_by_classification(df)
+                            st.pyplot(fig)
+                            
+                            # Display raw data
+                            with st.expander("🔍 View Raw Data"):
+                                st.dataframe(df)
+                                
+                                # Add download button
+                                csv = df.to_csv(index=False)
+                                st.download_button(
+                                    label="Download Treasury Data",
+                                    data=csv,
+                                    file_name="treasury_data.csv",
+                                    mime="text/csv",
+                                )
+                        
+                        else:
+                            st.error("Failed to fetch Treasury data. Please try again.")
+                
+                except Exception as e:
+                    logger.error(f"Treasury analysis error: {str(e)}")
+                    st.error("An error occurred during Treasury analysis. Please try again.")
                     st.exception(e)
 
     except Exception as e:
