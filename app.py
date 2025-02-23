@@ -21,8 +21,12 @@ from forecasting import (
     create_forecast_plot,
     display_metrics,
     display_confidence_analysis,
-    add_technical_indicators,
-    display_forecast_results
+    add_technical_indicators
+)
+from forecast_display import (
+    display_forecast_results,
+    display_sentiment_impact_analysis,
+    display_sentiment_impact_results
 )
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
