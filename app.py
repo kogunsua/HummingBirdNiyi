@@ -1,4 +1,3 @@
-#app.py
 # app.py
 import streamlit as st
 from datetime import datetime, timedelta
@@ -8,14 +7,17 @@ import pandas as pd
 import pytz
 from typing_extensions import Literal
 from dataclasses import dataclass
+import yfinance as yf
+from typing import Optional
+import traceback
 
-# Import local modules correctly
+# Import local modules with absolute imports
 from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
-from .config import Config, MODEL_DESCRIPTIONS
-from .data_fetchers import AssetDataFetcher, EconomicIndicators
+from config import Config, MODEL_DESCRIPTIONS
+from data_fetchers import AssetDataFetcher, EconomicIndicators
 
 # Import all required functions from forecasting
-from .forecasting import (
+from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
@@ -31,15 +33,15 @@ from .forecasting import (
     display_economic_indicators
 )
 
-from .sentiment_analyzer import (
+from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
     display_sentiment_impact_analysis,
     display_sentiment_impact_results,
     get_sentiment_data
 )
 
-from .gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-from .treasury_interface import display_treasury_dashboard
+from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+from treasury_interface import display_treasury_dashboard
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +76,7 @@ class AssetDataFetcher:
     @staticmethod
     def get_crypto_data(symbol: str, start_date: datetime, end_date: datetime) -> Optional[pd.DataFrame]:
         try:
-            data = yf.download(symbol, start=start_date, end=end_date)
+            data = yf.download(f"{symbol}-USD", start=start_date, end=end_date)
             return data if not data.empty else None
         except Exception as e:
             logger.error(f"Error fetching crypto data: {e}")
@@ -163,7 +165,7 @@ def get_user_inputs() -> Optional[UserInputs]:
         with col2:
             symbol = st.text_input(
                 "Enter Symbol",
-                help="Enter stock symbol (e.g., AAPL) or crypto symbol (e.g., BTC-USD)"
+                help="Enter stock symbol (e.g., AAPL) or crypto symbol (e.g., BTC)"
             ).upper()
 
         if not symbol:
