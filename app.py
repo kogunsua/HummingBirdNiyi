@@ -3,34 +3,46 @@ import streamlit as st
 from datetime import datetime, timedelta
 import logging
 import sys
-from typing import Optional, Tuple, Dict, Any
+from typing import Tuple, Optional, Dict, Any
+import streamlit as st
+import logging
+import sys
+from datetime import datetime, timedelta
 import pandas as pd
-import traceback
-import yfinance as yf
-from logging.handlers import RotatingFileHandler
 import pytz
 from typing_extensions import Literal
 from dataclasses import dataclass
 from pathlib import Path
 
-# Import local modules
+# Import local modules correctly
 from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators
+
+# Import all required functions from forecasting
 from forecasting import (
     prophet_forecast,
     create_forecast_plot,
     display_metrics,
     display_confidence_analysis,
     add_technical_indicators,
-    display_forecast_results
+    display_forecast_results,
+    prepare_data_for_prophet,
+    add_crypto_specific_indicators,
+    add_stock_specific_indicators,
+    display_stock_metrics,
+    display_common_metrics,
+    display_crypto_metrics,
+    display_economic_indicators
 )
+
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
     display_sentiment_impact_analysis,
     display_sentiment_impact_results,
     get_sentiment_data
 )
+
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
 from treasury_interface import display_treasury_dashboard
 
