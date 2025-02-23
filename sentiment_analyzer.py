@@ -1,351 +1,437 @@
-# treasurydata.py
-# Treasury Data Fetcher Application
-# This application fetches and analyzes data from the U.S. Treasury's Monthly Treasury Statement (MTS) Table 1 API
-# The API provides detailed information about government receipts, outlays, and deficit/surplus
+"""
+Multi-source sentiment analyzer for financial market analysis.
+Provides synchronous sentiment analysis from multiple sources.
+"""
+"""
+Multi-source sentiment analyzer for financial market analysis.
+Provides synchronous sentiment analysis from multiple sources.
+"""
 
-import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-from typing import Dict, List, Optional, Tuple
+import logging
+import requests
+import time
 import json
-from enum import Enum
+from typing import Optional, Dict, List, Tuple, Any
+import yfinance as yf
+from newsapi import NewsApiClient
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+from textblob import TextBlob
+import streamlit as st
+import plotly.graph_objects as go
 
-class TreasuryDataFetcher:
-    """
-    A class to handle fetching and processing data from the U.S. Treasury's MTS API
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class MultiSourceSentimentAnalyzer:
+    """Enhanced sentiment analyzer with multiple data sources"""
     
-    This class provides methods to:
-    - Build API URLs with various parameters
-    - Fetch data from the API
-    - Process and clean the retrieved data
-    - Create visualizations of the data
-    - Monitor funding changes and generate alerts
-    """
-    
-    def __init__(self):
-        """
-        Initialize the TreasuryDataFetcher with base API endpoints and configurations
-        """
-        self.base_url = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service'
-        self.endpoint = '/v1/accounting/mts/mts_table_1'
-        self.outlays_endpoint = '/v1/accounting/mts/mts_table_3'
-        
-        # Define thresholds for funding changes
-        self.significant_change_threshold = 15.0
-        self.critical_cut_threshold = -30.0
-        
-        # Define program categories
-        self.program_categories = {
-            'SNAP': 'Supplemental Nutrition Assistance Program',
-            'NIH': 'National Institutes of Health',
-            'SSA': 'Social Security Administration',
-            'VA': 'Veterans Affairs',
-            'ED': 'Department of Education',
-            'HUD': 'Housing and Urban Development',
-            'DOD': 'Department of Defense',
-            'HHS': 'Health and Human Services',
-            'DHS': 'Department of Homeland Security'
-        }
-        
-    def build_url(self, 
-                  fields: List[str],
-                  start_date: Optional[str] = None,
-                  end_date: Optional[str] = None,
-                  page_size: int = 100,
-                  page_number: int = 1,
-                  outlays: bool = False) -> str:
-        """
-        Builds a complete API URL with the specified parameters
-        """
-        fields_str = ','.join(fields)
-        endpoint = self.outlays_endpoint if outlays else self.endpoint
-        url = f"{self.base_url}{endpoint}?fields={fields_str}"
-        
-        if start_date:
-            url += f"&filter=record_date:gte:{start_date}"
-        if end_date:
-            url += f"&filter=record_date:lte:{end_date}"
-            
-        url += "&sort=-record_date"
-        url += f"&page[number]={page_number}&page[size]={page_size}"
-        
-        return url
-    
-    def fetch_data(self, url: str) -> pd.DataFrame:
-        """
-        Fetches data from the API and converts it to a pandas DataFrame
-        """
+    def __init__(self, newsapi_key: str = None, finnhub_key: str = None):
+        """Initialize the sentiment analyzer"""
+        self.newsapi_key = newsapi_key
+        self.finnhub_key = finnhub_key
+        self._initialize_nltk()
+        self.newsapi_client = self._initialize_newsapi()
+
+    def _initialize_nltk(self) -> None:
+        """Initialize NLTK with error handling"""
         try:
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'data' not in data:
-                raise ValueError("No data found in API response")
-                
-            df = pd.DataFrame(data['data'])
-            df['record_date'] = pd.to_datetime(df['record_date'])
-            
-            numeric_columns = [
-                'current_month_gross_rcpt_amt',
-                'current_month_outly_amt'
-            ]
-            for col in numeric_columns:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            return df
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching data: {e}")
-            raise
+            nltk.download('vader_lexicon', quiet=True)
+            self.sia = SentimentIntensityAnalyzer()
+        except Exception as e:
+            logger.error(f"Failed to initialize NLTK: {e}")
+            raise RuntimeError("Failed to initialize sentiment analyzer")
 
-    def calculate_moving_average(self, df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
-        """
-        Calculate moving average for time series data
-        """
-        df = df.copy()
-        for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt']:
-            if col in df.columns:
-                df[f'{col}_ma'] = df[col].rolling(window=days).mean()
-        return df
+    def _initialize_newsapi(self) -> Optional[NewsApiClient]:
+        """Initialize News API client"""
+        if self.newsapi_key:
+            try:
+                return NewsApiClient(api_key=self.newsapi_key)
+            except Exception as e:
+                logger.error(f"Failed to initialize News API client: {e}")
+        return None
 
-    def detect_funding_changes(self, df: pd.DataFrame, category: str) -> List[Dict]:
-        """
-        Detect significant changes in funding and generate alerts
-        """
-        alerts = []
-        df = df.sort_values('record_date')
-        
-        for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt']:
-            if col in df.columns:
-                df[f'{col}_pct_change'] = df[col].pct_change() * 100
-                
-                for idx, row in df.iterrows():
-                    pct_change = row[f'{col}_pct_change']
-                    if pd.notnull(pct_change):
-                        alert = self._create_alert(row, category, col, pct_change)
-                        if alert['alert_type']:
-                            alerts.append(alert)
-        
-        return alerts
-
-    def _create_alert(self, row: pd.Series, category: str, col: str, pct_change: float) -> Dict:
-        """
-        Create an alert dictionary based on funding changes
-        """
-        alert = {
-            'date': row['record_date'],
-            'category': category,
-            'type': col.replace('current_month_', '').replace('_amt', ''),
-            'change': pct_change,
-            'alert_type': None,
-            'message': None
-        }
-        
-        if pct_change <= self.critical_cut_threshold:
-            alert['alert_type'] = 'RED_ALERT'
-            alert['message'] = (
-                f"🚨 CRITICAL: Severe funding cut detected for {category}. "
-                f"Decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change <= -self.significant_change_threshold:
-            alert['alert_type'] = 'WARNING'
-            alert['message'] = (
-                f"⚠️ Warning: Significant decrease in {category} funding. "
-                f"Decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change >= self.significant_change_threshold:
-            alert['alert_type'] = 'INFO'
-            alert['message'] = (
-                f"ℹ️ Notice: Significant increase in {category} funding. "
-                f"Increase of {pct_change:.1f}%"
-            )
-        
-        return alert
-
-    def generate_recommendations(self, alerts: List[Dict]) -> List[str]:
-        """
-        Generate recommendations based on funding alerts
-        """
-        recommendations = []
-        category_alerts = {}
-        
-        # Group alerts by category and type
-        for alert in alerts:
-            key = (alert['category'], alert['type'])
-            if key not in category_alerts:
-                category_alerts[key] = []
-            category_alerts[key].append(alert)
-        
-        # Generate recommendations based on patterns
-        for (category, alert_type), cat_alerts in category_alerts.items():
-            red_alerts = sum(1 for a in cat_alerts if a['alert_type'] == 'RED_ALERT')
-            warnings = sum(1 for a in cat_alerts if a['alert_type'] == 'WARNING')
-            
-            if red_alerts > 0:
-                recommendations.append(
-                    f"🚨 URGENT: {category} has experienced critical {alert_type} cuts. "
-                    "Immediate review and contingency planning recommended."
-                )
-            elif warnings >= 2:
-                recommendations.append(
-                    f"⚠️ ATTENTION: {category} shows a pattern of {alert_type} decreases. "
-                    "Consider strategic planning to address potential impacts."
-                )
-        
-        return recommendations
-
-    def plot_treasury_visualization(self, 
-                                  df: pd.DataFrame,
-                                  frequency: str = 'daily',
-                                  categories: Optional[List[str]] = None,
-                                  plot_type: str = 'outlays') -> plt.Figure:
-        """
-        Create an enhanced visualization of treasury data with alerts
-        """
-        fig, ax = plt.subplots(figsize=(15, 8))
-        
-        amount_column = (
-            'current_month_outly_amt' 
-            if plot_type == 'outlays' 
-            else 'current_month_gross_rcpt_amt'
-        )
-        
-        categories = categories or df['classification_desc'].unique()
-        
-        for category in categories:
-            category_data = df[df['classification_desc'] == category].copy()
-            
-            if frequency == 'seven_day_ma':
-                category_data = self.calculate_moving_average(category_data)
-                plot_data = category_data.set_index('record_date')[f'{amount_column}_ma']
-                label = f"{category} (7-day MA)"
-            elif frequency == 'weekly':
-                category_data['week'] = category_data['record_date'].dt.to_period('W')
-                plot_data = category_data.groupby('week')[amount_column].sum()
-                label = f"{category} (Weekly)"
-            else:  # daily
-                plot_data = category_data.set_index('record_date')[amount_column]
-                label = f"{category} (Daily)"
-            
-            # Convert to billions
-            plot_data = plot_data / 1e9
-            
-            # Plot the data
-            ax.plot(plot_data.index, plot_data.values, label=label, marker='o', markersize=4)
-            
-            # Add alert indicators
-            alerts = self.detect_funding_changes(category_data, category)
-            for alert in alerts:
-                if alert['alert_type'] == 'RED_ALERT':
-                    ax.axvline(x=alert['date'], color='red', linestyle='--', alpha=0.3)
-        
-        title_type = "Outlays" if plot_type == 'outlays' else "Receipts"
-        ax.set_title(f'Treasury {title_type} by Category')
-        ax.set_xlabel('Date')
-        ax.set_ylabel(f'{title_type} (Billions USD)')
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        return fig
-
-    def analyze_treasury_data(self, 
-                            start_date: datetime,
-                            end_date: datetime,
-                            categories: Optional[List[str]] = None,
-                            frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
-        """
-        Comprehensive analysis of treasury data with alerts and recommendations
-        """
+    def fetch_yahoo_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch sentiment from Yahoo Finance"""
         try:
-            fields = [
-                'record_date',
-                'classification_desc',
-                'current_month_gross_rcpt_amt',
-                'current_month_outly_amt'
-            ]
+            ticker = yf.Ticker(symbol)
+            news = ticker.news
             
-            url = self.build_url(
-                fields=fields,
-                start_date=start_date.strftime('%Y-%m-%d'),
-                end_date=end_date.strftime('%Y-%m-%d'),
-                outlays=True
-            )
+            if not news:
+                logger.warning(f"No news found for {symbol}")
+                return None
             
-            df = self.fetch_data(url)
+            sentiment_data = []
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
             
-            if df is not None:
-                categories = categories or list(self.program_categories.keys())[:9]
-                all_alerts = []
-                
-                for category in categories:
-                    category_data = df[df['classification_desc'] == category]
-                    alerts = self.detect_funding_changes(category_data, category)
-                    all_alerts.extend(alerts)
-                
-                recommendations = self.generate_recommendations(all_alerts)
-                
-                return df, all_alerts, recommendations
+            for article in news:
+                try:
+                    # Get article date
+                    date = datetime.fromtimestamp(article['providerPublishTime'])
+                    
+                    # Check if article is within date range
+                    if not (start_dt <= date <= end_dt):
+                        continue
+                    
+                    # Process article text
+                    title = article.get('title', '').strip()
+                    description = article.get('description', '').strip()
+                    
+                    if not title:  # Skip if no title
+                        continue
+                    
+                    sentiment_data.append(
+                        self._process_article(
+                            title,
+                            description,
+                            date,
+                            'yahoo'
+                        )
+                    )
+                except Exception as e:
+                    logger.debug(f"Error processing Yahoo article: {e}")
+                    continue
             
-            return None, [], []
+            valid_data = [s for s in sentiment_data if s is not None]
+            if valid_data:
+                return pd.DataFrame(valid_data)
+            return None
             
         except Exception as e:
-            print(f"Analysis error: {e}")
-            return None, [], []
+            logger.error(f"Error in Yahoo Finance sentiment fetch: {e}")
+            return None
 
-def plot_receipts_by_classification(self, df: pd.DataFrame):
-        """
-        Alias for backward compatibility - redirects to plot_treasury_visualization
-        """
-        return self.plot_treasury_visualization(
-            df,
-            frequency='daily',
-            plot_type='receipts'
-        )
+    def fetch_newsapi_sentiment(self, symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
+        """Fetch sentiment from News API"""
+        if not self.newsapi_client:
+            return None
+            
+        try:
+            articles = self._safe_api_call(
+                lambda: self.newsapi_client.get_everything(
+                    q=symbol,
+                    from_param=start_date,
+                    to=end_date,
+                    language='en',
+                    sort_by='publishedAt'
+                ),
+                max_retries=3
+            )
+            
+            if not articles or 'articles' not in articles:
+                return None
+                
+            sentiment_data = []
+            for article in articles['articles']:
+                try:
+                    title = article.get('title', '').strip()
+                    description = article.get('description', '').strip()
+                    published_at = article.get('publishedAt')
+                    
+                    if not (title and published_at):
+                        continue
+                        
+                    sentiment_data.append(
+                        self._process_article(
+                            title,
+                            description,
+                            pd.to_datetime(published_at),
+                            'newsapi'
+                        )
+                    )
+                except Exception as e:
+                    logger.debug(f"Error processing News API article: {e}")
+                    continue
+            
+            valid_data = [s for s in sentiment_data if s is not None]
+            if valid_data:
+                return pd.DataFrame(valid_data)
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error in News API sentiment fetch: {e}")
+            return None
 
-def main():
-    """
-    Main function to demonstrate the usage of TreasuryDataFetcher
-    """
-    fetcher = TreasuryDataFetcher()
-    
-    # Example analysis
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=90)
-    categories = ['SNAP', 'NIH', 'VA']
-    
-    try:
-        df, alerts, recommendations = fetcher.analyze_treasury_data(
-            start_date,
-            end_date,
-            categories
-        )
+    def _process_article(self, 
+                        title: str, 
+                        description: str, 
+                        date: datetime,
+                        source: str) -> Optional[Dict[str, Any]]:
+        """Process a single article with sentiment analysis"""
+        if not title.strip():
+            return None
+            
+        text = f"{title} {description}".strip()
         
-        if df is not None:
-            print("\nAnalysis Results:")
-            print("-" * 50)
-            print(f"Total records: {len(df)}")
-            print(f"Date range: {df['record_date'].min()} to {df['record_date'].max()}")
+        try:
+            vader_scores = self.sia.polarity_scores(text)
+            blob_sentiment = TextBlob(text).sentiment
             
-            print("\nAlerts:")
-            for alert in alerts:
-                print(f"- {alert['message']}")
+            sentiment_score = (vader_scores['compound'] + blob_sentiment.polarity) / 2
             
-            print("\nRecommendations:")
-            for rec in recommendations:
-                print(f"- {rec}")
+            return {
+                'ds': date,
+                'sentiment_score': (sentiment_score + 1) / 2,  # Normalize to 0-1
+                'source': source,
+                'confidence': abs(blob_sentiment.subjectivity),
+                'title': title
+            }
+        except Exception as e:
+            logger.debug(f"Error processing article: {e}")
+            return None
+
+    def _process_combined_sentiment(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Process combined sentiment data with additional metrics"""
+        try:
+            df['ds'] = pd.to_datetime(df['ds'])
+            df = df[df['ds'] <= datetime.now()]
             
-            # Create and save visualizations
-            fig = fetcher.plot_treasury_visualization(df, categories=categories)
-            fig.savefig('treasury_analysis.png', bbox_inches='tight')
-            print("\nAnalysis plot saved as 'treasury_analysis.png'")
+            daily_sentiment = df.groupby('ds').agg({
+                'sentiment_score': lambda x: np.average(x, weights=df.loc[x.index, 'confidence']),
+                'confidence': 'mean',
+                'title': 'count'
+            }).rename(columns={'title': 'article_count'}).reset_index()
+            
+            # Add rolling statistics
+            daily_sentiment['sentiment_ma'] = daily_sentiment['sentiment_score'].rolling(window=3).mean()
+            daily_sentiment['sentiment_std'] = daily_sentiment['sentiment_score'].rolling(window=5).std()
+            
+            # Add momentum indicators
+            daily_sentiment['sentiment_momentum'] = daily_sentiment['sentiment_score'].diff()
+            daily_sentiment['sentiment_acceleration'] = daily_sentiment['sentiment_momentum'].diff()
+            
+            return daily_sentiment.sort_values('ds')
+            
+        except Exception as e:
+            logger.error(f"Error processing combined sentiment: {e}")
+            return pd.DataFrame()
+
+    def _safe_api_call(self, func: callable, max_retries: int = 3, delay: float = 1.0) -> Any:
+        """Execute API calls with retry logic and rate limiting"""
+        for attempt in range(max_retries):
+            try:
+                time.sleep(delay)  # Rate limiting
+                return func()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                logger.warning(f"API call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                time.sleep(delay * (attempt + 1))  # Exponential backoff
+
+def display_sentiment_impact_analysis(sentiment_period: int, 
+                                    sentiment_weight: float,
+                                    sentiment_source: str) -> None:
+    """Display sentiment impact analysis configuration"""
+    st.markdown("### 🎭 Sentiment Impact Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Analysis Period",
+            f"{sentiment_period} days",
+            help="Historical period used for sentiment analysis"
+        )
+    
+    with col2:
+        impact_level = (
+            "High" if sentiment_weight > 0.7
+            else "Medium" if sentiment_weight > 0.3
+            else "Low"
+        )
+        impact_color = (
+            "🔴" if sentiment_weight > 0.7
+            else "🟡" if sentiment_weight > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Impact Level",
+            f"{impact_level} {impact_color}",
+            f"{sentiment_weight:.1%}",
+            help="Level of influence sentiment has on forecast"
+        )
+    
+    with col3:
+        source_reliability = {
+            "Multi-Source": {"level": "High", "confidence": 0.9},
+            "GDELT": {"level": "Medium-High", "confidence": 0.8},
+            "Yahoo Finance": {"level": "Medium", "confidence": 0.7},
+            "News API": {"level": "Medium", "confidence": 0.7}
+        }
+        
+        reliability_info = source_reliability.get(sentiment_source, {"level": "Medium", "confidence": 0.7})
+        st.metric(
+            "Source Reliability",
+            reliability_info['level'],
+            f"{reliability_info['confidence']:.0%}",
+            help="Reliability of the selected sentiment data source"
+        )
+    
+    with st.expander("💡 Understanding Sentiment Impact"):
+        st.markdown("""
+        **How Sentiment Affects the Forecast:**
+        
+        1. **Analysis Period** (Historical Window)
+           - Longer periods provide more stable analysis
+           - Shorter periods capture recent market sentiment
+           - Optimal period varies by asset volatility
+        
+        2. **Impact Level** (Weight)
+           - High (>70%): Strong sentiment influence
+           - Medium (30-70%): Balanced price-sentiment mix
+           - Low (<30%): Minimal sentiment adjustment
+        
+        3. **Source Reliability**
+           - Multi-Source: Highest reliability (combined sources)
+           - GDELT: Global event impact
+           - News/Finance API: Market-specific sentiment
+        """)
+
+def display_sentiment_impact_results(impact_metrics: Dict) -> None:
+    """Display sentiment impact analysis results"""
+    st.subheader("🎭 Sentiment Impact Results")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        correlation = impact_metrics.get('sentiment_correlation', 0)
+        correlation_color = (
+            "🟢" if abs(correlation) > 0.7
+            else "🟡" if abs(correlation) > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price-Sentiment Correlation",
+            f"{correlation:.2f} {correlation_color}"
+        )
+    
+    with col2:
+        volatility = impact_metrics.get('sentiment_volatility', 0)
+        volatility_color = (
+            "🔴" if volatility > 0.7
+            else "🟡" if volatility > 0.3
+            else "🟢"
+        )
+        st.metric(
+            "Sentiment Volatility",
+            f"{volatility:.2f} {volatility_color}"
+        )
+    
+    with col3:
+        sensitivity = impact_metrics.get('price_sensitivity', 0)
+        sensitivity_color = (
+            "🟡" if sensitivity > 0.7
+            else "🟢" if sensitivity > 0.3
+            else "🔴"
+        )
+        st.metric(
+            "Price Sensitivity",
+            f"{sensitivity:.2f} {sensitivity_color}"
+        )
+    
+    # Add detailed analysis guide
+    with st.expander("📊 Impact Analysis Interpretation"):
+        st.markdown(f"""
+        **Current Market Sentiment Analysis:**
+        
+        1. **Correlation** ({impact_metrics.get('sentiment_correlation', 0):.2f}):
+           - {
+            "Strong price-sentiment relationship" if abs(impact_metrics.get('sentiment_correlation', 0)) > 0.7
+            else "Moderate price-sentiment relationship" if abs(impact_metrics.get('sentiment_correlation', 0)) > 0.3
+            else "Weak price-sentiment relationship"
+           }
+        
+        2. **Volatility** ({impact_metrics.get('sentiment_volatility', 0):.2f}):
+           - {
+            "High sentiment volatility - exercise caution" if impact_metrics.get('sentiment_volatility', 0) > 0.7
+            else "Moderate sentiment volatility" if impact_metrics.get('sentiment_volatility', 0) > 0.3
+            else "Low sentiment volatility - stable sentiment"
+           }
+        
+        3. **Price Sensitivity** ({impact_metrics.get('price_sensitivity', 0):.2f}):
+           - {
+            "High price sensitivity to sentiment" if impact_metrics.get('price_sensitivity', 0) > 0.7
+            else "Moderate price sensitivity" if impact_metrics.get('price_sensitivity', 0) > 0.3
+            else "Low price sensitivity to sentiment"
+           }
+        """)
+
+def get_sentiment_data(analyzer: MultiSourceSentimentAnalyzer,
+                      symbol: str,
+                      start_date: str,
+                      end_date: str,
+                      sentiment_source: str = "Multi-Source") -> Optional[pd.DataFrame]:
+    """Get sentiment data from specified source"""
+    try:
+        if sentiment_source == "Yahoo Finance":
+            return analyzer.fetch_yahoo_sentiment(symbol, start_date, end_date)
+        elif sentiment_source == "News API":
+            return analyzer.fetch_newsapi_sentiment(symbol, start_date, end_date)
+        else:  # Multi-Source
+            # Collect data from all available sources
+            sentiment_data = []
+            
+            # Try Yahoo Finance
+            yahoo_data = analyzer.fetch_yahoo_sentiment(symbol, start_date, end_date)
+            if yahoo_data is not None:
+                sentiment_data.append(yahoo_data)
+            
+            # Try News API
+            news_data = analyzer.fetch_newsapi_sentiment(symbol, start_date, end_date)
+            if news_data is not None:
+                sentiment_data.append(news_data)
+            
+            if not sentiment_data:
+                logger.warning("No sentiment data available from any source")
+                return None
+            
+            # Combine and process data
+            combined_data = pd.concat(sentiment_data, ignore_index=True)
+            return analyzer._process_combined_sentiment(combined_data)
     
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.error(f"Error getting sentiment data: {str(e)}")
+        return None
 
-if __name__ == "__main__":
-    main()
+def integrate_multi_source_sentiment(symbol: str,
+                                   sentiment_period: int,
+                                   sentiment_weight: float = 0.5) -> Tuple[Optional[pd.DataFrame], Dict]:
+                                
+    """Integrate sentiment analysis with forecasting"""
+    try:
+        analyzer = MultiSourceSentimentAnalyzer()
+        start_date = (datetime.now() - timedelta(days=sentiment_period)).strftime("%Y-%m-%d")
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        
+        sentiment_data = get_sentiment_data(analyzer, symbol, start_date, end_date)
+        
+        if sentiment_data is not None:
+            impact_metrics = {
+                'sentiment_correlation': sentiment_data['sentiment_score'].autocorr(),
+                'sentiment_volatility': sentiment_data['sentiment_score'].std(),
+                'price_sensitivity': sentiment_weight
+            }
+            return sentiment_data, impact_metrics
+        
+        return None, {}
+    
+    except Exception as e:
+        logger.error(f"Error in sentiment integration: {str(e)}")
+        return None, {}
+
+# Export all required functions and classes
+__all__ = [
+    'MultiSourceSentimentAnalyzer',
+    'integrate_multi_source_sentiment',
+    'display_sentiment_impact_analysis',
+    'display_sentiment_impact_results',
+    'get_sentiment_data'
+]
