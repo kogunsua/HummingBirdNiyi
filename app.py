@@ -10,7 +10,7 @@ from typing_extensions import Literal
 from dataclasses import dataclass
 
 # Import local modules correctly
-from .dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
+from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from .config import Config, MODEL_DESCRIPTIONS
 from .data_fetchers import AssetDataFetcher, EconomicIndicators
 
