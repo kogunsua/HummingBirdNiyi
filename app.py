@@ -7,34 +7,8 @@ from typing import Optional, Tuple, Dict
 import pandas as pd
 import traceback
 import yfinance as yf
-
-# Import local modules
-from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
-from config import Config, MODEL_DESCRIPTIONS
-from data_fetchers import AssetDataFetcher, EconomicIndicators
-
-# Import from forecasting.py
-from forecasting import (
-    prophet_forecast,
-    create_forecast_plot,
-    add_technical_indicators
-)
-
-# Import from forecast_display.py
-from forecast_display import (
-    display_forecast_results,
-    display_sentiment_impact_analysis,
-    display_sentiment_impact_results
-)
-
-from sentiment_analyzer import (
-    MultiSourceSentimentAnalyzer,
-    get_sentiment_data
-)
-from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-
-# Import Treasury modules - you already have these files
-from treasury_interface import display_treasury_dashboard
+import os
+import importlib.util
 
 # Configure logging
 logging.basicConfig(
@@ -46,6 +20,125 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Import local modules
+from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
+from config import Config, MODEL_DESCRIPTIONS
+from data_fetchers import AssetDataFetcher, EconomicIndicators
+
+# Try to import from sentiment_analyzer
+try:
+    from sentiment_analyzer import (
+        MultiSourceSentimentAnalyzer,
+        get_sentiment_data
+    )
+except ImportError:
+    logger.warning("Could not import from sentiment_analyzer, some functionality may be limited")
+    # Create placeholder functions if needed
+    def get_sentiment_data(*args, **kwargs):
+        st.warning("Sentiment analysis functionality is not available")
+        return None
+    
+    class MultiSourceSentimentAnalyzer:
+        def __init__(self):
+            pass
+
+# Try to import from gdelt_analysis
+try:
+    from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+except ImportError:
+    logger.warning("Could not import from gdelt_analysis, some functionality may be limited")
+    # Create placeholder functions
+    class GDELTAnalyzer:
+        def __init__(self):
+            pass
+        
+        def fetch_sentiment_data(self, *args, **kwargs):
+            return None
+    
+    def update_forecasting_process(*args, **kwargs):
+        return None, {}
+
+# Import Treasury modules
+from treasury_interface import display_treasury_dashboard
+
+# Placeholder functions for forecasting if imports fail
+def prophet_forecast(data, periods, **kwargs):
+    """Placeholder function if forecasting module is not available"""
+    st.warning("Forecasting functionality is not available. Check if the forecasting.py file exists.")
+    return None, {}
+
+def create_forecast_plot(*args, **kwargs):
+    """Placeholder function if forecasting module is not available"""
+    return None
+
+def add_technical_indicators(df, asset_type='stocks'):
+    """Placeholder function if forecasting module is not available"""
+    return df
+
+def display_forecast_results(*args, **kwargs):
+    """Placeholder function if forecast display functionality is not available"""
+    st.warning("Forecast display functionality is not available. Check if the forecast_display.py file exists.")
+
+def display_sentiment_impact_analysis(*args, **kwargs):
+    """Placeholder function if forecast display functionality is not available"""
+    pass
+
+def display_sentiment_impact_results(*args, **kwargs):
+    """Placeholder function if forecast display functionality is not available"""
+    pass
+
+# Try to dynamically import from forecasting.py - path check first
+possible_paths = [
+    './forecasting.py',
+    './models/forecasting.py',
+    './src/forecasting.py',
+    '../forecasting.py'
+]
+
+for path in possible_paths:
+    if os.path.exists(path):
+        logger.info(f"Found forecasting module at {path}")
+        try:
+            spec = importlib.util.spec_from_file_location("forecasting", path)
+            forecasting = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(forecasting)
+            
+            # Override placeholder functions with actual implementations
+            prophet_forecast = forecasting.prophet_forecast
+            create_forecast_plot = forecasting.create_forecast_plot
+            add_technical_indicators = forecasting.add_technical_indicators
+            
+            logger.info("Successfully imported forecasting functions")
+            break
+        except Exception as e:
+            logger.error(f"Error importing forecasting module: {str(e)}")
+
+# Try to dynamically import from forecast_display.py
+display_paths = [
+    './forecast_display.py',
+    './display/forecast_display.py',
+    './src/forecast_display.py',
+    '../forecast_display.py'
+]
+
+for path in display_paths:
+    if os.path.exists(path):
+        logger.info(f"Found forecast_display module at {path}")
+        try:
+            spec = importlib.util.spec_from_file_location("forecast_display", path)
+            forecast_display = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(forecast_display)
+            
+            # Override placeholder functions with actual implementations
+            display_forecast_results = forecast_display.display_forecast_results
+            display_sentiment_impact_analysis = forecast_display.display_sentiment_impact_analysis
+            display_sentiment_impact_results = forecast_display.display_sentiment_impact_results
+            
+            logger.info("Successfully imported forecast display functions")
+            break
+        except Exception as e:
+            logger.error(f"Error importing forecast_display module: {str(e)}")
 
 def display_header():
     """Display the application header with styling"""
@@ -210,7 +303,7 @@ def main():
             layout="wide"
         )
 
-        #Create Config instance at the start
+        # Create Config instance at the start
         config = Config()
         
         # Display header
