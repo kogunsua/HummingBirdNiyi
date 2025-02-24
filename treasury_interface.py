@@ -183,6 +183,15 @@ def display_treasury_dashboard():
                     
                     Try selecting a different time period or different categories.
                     """)
+            except Exception as e:
+                st.error(f"Error retrieving spending data: {str(e)}")
+                st.info("""
+                Troubleshooting tips:
+                - Check your internet connection
+                - Try a smaller time period
+                - Try different categories
+                - The Treasury API might be temporarily unavailable
+                """)
             
             except Exception as e:
                 st.error(f"Error retrieving spending data: {str(e)}")
