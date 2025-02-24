@@ -8,7 +8,7 @@ import pandas as pd
 from typing import List, Optional
 from treasurydata import TreasuryDataFetcher
 
-def display_treasury_dashboard():
+def display_treasury_dashboard_internal():
     """Main function to display the Treasury dashboard"""
     st.title("🏦 U.S. Treasury Daily Statement Analysis")
     
@@ -344,7 +344,7 @@ def display_treasury_tab():
     dashboard_tab, diagnostics_tab = st.tabs(["Dashboard", "Diagnostics"])
     
     with dashboard_tab:
-        display_treasury_dashboard()
+        display_treasury_dashboard_internal()
     
     with diagnostics_tab:
         st.title("🔍 Treasury API Diagnostics")
@@ -385,9 +385,9 @@ def display_treasury_tab():
                 except Exception as e:
                     st.error(f"❌ Error testing API: {str(e)}")
 
-# This function should be kept as it's imported by app.py
+# This function is the public entry point
 def display_treasury_dashboard():
-    """Main function to display the Treasury dashboard"""
+    """Public entry point to display the Treasury dashboard"""
     # Call display_treasury_tab which includes both the dashboard and diagnostics
     display_treasury_tab()
 
