@@ -10,7 +10,7 @@ from treasurydata import TreasuryDataFetcher
 
 def display_treasury_dashboard():
     """Main function to display the Treasury dashboard"""
-    st.title("🏦 U.S. Treasury Monthly Statement Analysis")
+    st.title("🏦 U.S. Treasury Daily Statement Analysis")
     
     # Initialize TreasuryDataFetcher
     fetcher = TreasuryDataFetcher()
@@ -19,30 +19,24 @@ def display_treasury_dashboard():
     with st.sidebar:
         st.header("Analysis Configuration")
         
-        # Specific date selection instead of date range
+        # Use specific date selection instead of date range
         st.subheader("Select Treasury Report Date")
         available_dates = fetcher.get_available_dates()
-        
-        if 'selected_date' not in st.session_state:
-            st.session_state.selected_date = available_dates[0]
         
         selected_date = st.selectbox(
             "Report Date",
             options=available_dates,
-            index=available_dates.index(st.session_state.selected_date),
+            index=0,
             help="Select a specific Treasury report date"
         )
         
-        st.session_state.selected_date = selected_date
-        
-        # Show info about date selection approach
+        # Show information about date selection approach
         st.info(f"Selected report date: {selected_date}")
-        st.write("The Treasury API requires specific report dates. Date ranges are less reliable.")
+        st.write("The Treasury API works best with specific report dates.")
         
         # Category selection
         st.subheader("Select Categories")
-        default_categories = ['DOD', 'HHS', 'VA']
-        
+        default_categories = ['SNAP', 'NIH', 'VA']
         if 'categories' not in st.session_state:
             st.session_state.categories = default_categories
             
@@ -65,7 +59,7 @@ def display_treasury_dashboard():
         
         frequency = st.selectbox(
             "Data Frequency",
-            options=['daily'],  # Removed weekly and seven_day_ma as they require multiple dates
+            options=['daily', 'weekly', 'seven_day_ma'],
             help="Choose data aggregation frequency"
         )
 
@@ -75,16 +69,21 @@ def display_treasury_dashboard():
             st.warning("Please select at least one category to analyze")
             return
             
-        with st.spinner(f"Fetching Treasury data for {selected_date}..."):
+        with st.spinner("Fetching Treasury data..."):
             try:
-                # Get treasury data using specific date
+                # We'll continue to use the existing function signature but modify how it works internally
+                # to use specific date filtering instead of date ranges
+                start_date = datetime.now() - timedelta(days=1)  # Just a placeholder
+                end_date = datetime.now()  # Just a placeholder
+                
                 df, alerts, recommendations = fetcher.analyze_treasury_data(
-                    specific_date=selected_date,
+                    start_date=start_date,
+                    end_date=end_date,
                     categories=categories,
                     frequency=frequency
                 )
                 
-                if not df.empty:
+                if df is not None and not df.empty:
                     # Create tabs for different views
                     overview_tab, alerts_tab, details_tab = st.tabs([
                         "📊 Overview",
@@ -104,11 +103,10 @@ def display_treasury_dashboard():
                     st.error("No data available for the selected parameters.")
                     st.info("""
                     This could be due to:
-                    - The selected date might not have data available
                     - The selected categories might not have records for this period
                     - The Treasury API might be experiencing issues
                     
-                    Try selecting a different date or different categories.
+                    Try selecting different categories.
                     """)
             
             except Exception as e:
@@ -116,7 +114,6 @@ def display_treasury_dashboard():
                 st.info("""
                 Troubleshooting tips:
                 - Check your internet connection
-                - Try a different date
                 - Try different categories
                 - The Treasury API might be temporarily unavailable
                 """)
@@ -125,7 +122,7 @@ def display_treasury_dashboard():
         st.info("""
         ## How to use this dashboard
         
-        1. Select a specific Treasury report date from the sidebar
+        1. Select a Treasury report date from the sidebar
         2. Choose one or more program categories to analyze
         3. Select whether to view outlays or receipts data
         4. Click "Run Analysis" to generate the visualization
@@ -139,7 +136,7 @@ def display_overview(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
     st.subheader("Treasury Data Overview")
     
     # Create visualization
-    fig = create_treasury_plot(df, fetcher, categories, analysis_type)
+    fig = create_treasury_plot(df, fetcher, categories, frequency, analysis_type)
     st.plotly_chart(fig, use_container_width=True)
     
     # Display summary metrics
@@ -149,19 +146,20 @@ def display_overview(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
     metrics = calculate_summary_metrics(df, categories, analysis_type)
     
     # Display metrics in columns
+    cols = st.columns(len(metrics)) if metrics else st.columns(1)
     if metrics:
-        cols = st.columns(len(metrics))
         for col, metric in zip(cols, metrics):
             with col:
                 st.metric(
                     label=metric['category'],
-                    value=f"${metric['current_value']:.2f}B"
+                    value=f"${metric['current_value']:.2f}B",
+                    delta=f"{metric['change']:.1f}%" if 'change' in metric else None
                 )
     else:
         st.info("No metrics available for the selected data")
 
 def create_treasury_plot(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
-                        categories: List[str], plot_type: str) -> go.Figure:
+                        categories: List[str], frequency: str, plot_type: str) -> go.Figure:
     """Create interactive Plotly visualization of Treasury data"""
     fig = go.Figure()
     
@@ -171,36 +169,55 @@ def create_treasury_plot(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
         else 'current_month_gross_rcpt_amt'
     )
     
-    # Filter for selected categories
-    display_df = df[df['classification_desc'].isin(categories)].copy()
-    
-    if display_df.empty:
-        return fig
+    for category in categories:
+        category_data = df[df['classification_desc'] == category].copy()
         
-    # Convert to billions for display
-    if amount_column in display_df.columns:
-        display_df[amount_column] = display_df[amount_column] / 1e9
+        if category_data.empty:
+            continue
+            
+        if frequency == 'seven_day_ma':
+            category_data = fetcher.calculate_moving_average(category_data)
+            plot_data = category_data.set_index('record_date')[f'{amount_column}_ma']
+            label = f"{category} (7-day MA)"
+        elif frequency == 'weekly':
+            category_data['week'] = category_data['record_date'].dt.to_period('W')
+            plot_data = category_data.groupby('week')[amount_column].sum()
+            label = f"{category} (Weekly)"
+        else:  # daily
+            plot_data = category_data.set_index('record_date')[amount_column]
+            label = f"{category} (Daily)"
         
-        # Create bar chart - better for single date display
-        fig = go.Figure(data=[
+        # Convert to billions
+        plot_data = plot_data / 1e9
+        
+        # Add trace
+        fig.add_trace(
             go.Bar(
-                x=display_df['classification_desc'],
-                y=display_df[amount_column],
-                text=display_df[amount_column].apply(lambda x: f'${x:.2f}B'),
-                textposition='auto',
-                hoverinfo='text',
-                name=plot_type.capitalize()
+                x=[str(x).split()[0] for x in plot_data.index],  # Convert datetime to string for bar chart
+                y=plot_data.values,
+                name=label
             )
-        ])
+        )
+        
+        # Add alert indicators
+        alerts = fetcher.detect_funding_changes(category_data, category)
+        for alert in alerts:
+            if alert['alert_type'] == 'RED_ALERT':
+                fig.add_vline(
+                    x=str(alert['date']).split()[0],
+                    line_dash="dash",
+                    line_color="red",
+                    opacity=0.3
+                )
     
     title_type = "Outlays" if plot_type == 'outlays' else "Receipts"
     fig.update_layout(
         title=f'Treasury {title_type} by Category',
-        xaxis_title='Category',
+        xaxis_title='Date',
         yaxis_title=f'{title_type} (Billions USD)',
-        height=500,
+        height=600,
         showlegend=True,
-        hovermode='closest'
+        hovermode='x unified'
     )
     
     return fig
@@ -214,13 +231,22 @@ def calculate_summary_metrics(df: pd.DataFrame, categories: List[str],
     
     for category in categories:
         category_data = df[df['classification_desc'] == category]
-        if not category_data.empty and column in category_data.columns:
+        if not category_data.empty and len(category_data) > 0:
             current_value = category_data[column].iloc[0] / 1e9  # Convert to billions
             
-            metrics.append({
+            metric = {
                 'category': category,
                 'current_value': current_value
-            })
+            }
+            
+            # Add change metric if we have more than one data point
+            if len(category_data) > 1:
+                prev_value = category_data[column].iloc[1] / 1e9
+                if prev_value != 0:
+                    pct_change = ((current_value / prev_value) - 1) * 100
+                    metric['change'] = pct_change
+            
+            metrics.append(metric)
     
     return metrics
 
@@ -256,119 +282,120 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
     """Display detailed analysis of Treasury data"""
     st.subheader("Detailed Analysis")
     
-    # Show raw data table
-    st.markdown("### Treasury Data Table")
+    # Create trend analysis
+    st.markdown("### Data Table")
     
-    # Prepare data for display
-    amount_col = ('current_month_outly_amt' if analysis_type == 'outlays' 
-                 else 'current_month_gross_rcpt_amt')
+    # Show a filtered dataframe with just the relevant categories
+    filtered_df = df[df['classification_desc'].isin(categories)].copy()
     
-    if amount_col in df.columns:
-        display_cols = ['classification_desc', 'record_date', amount_col]
-        display_df = df[df['classification_desc'].isin(categories)][display_cols].copy()
+    if not filtered_df.empty:
+        # Select columns to display
+        display_cols = ['classification_desc', 'record_date']
+        amount_col = ('current_month_outly_amt' if analysis_type == 'outlays' 
+                     else 'current_month_gross_rcpt_amt')
         
-        if not display_df.empty:
-            # Format amounts to billions
-            display_df[amount_col] = display_df[amount_col] / 1e9
+        if amount_col in filtered_df.columns:
+            display_cols.append(amount_col)
+            filtered_df[amount_col] = filtered_df[amount_col] / 1e9  # Convert to billions
             
             # Rename columns for display
-            display_df = display_df.rename(columns={
+            renamed_df = filtered_df[display_cols].rename(columns={
                 'classification_desc': 'Category',
                 'record_date': 'Date',
-                amount_col: 'Amount (Billions $)'
+                amount_col: f'Amount (Billions $)'
             })
             
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(renamed_df)
         else:
-            st.info("No data available for the selected categories.")
+            st.info(f"No {amount_col} data available")
+    else:
+        st.info("No data available for the selected categories")
     
-    # Create individual category analysis
-    st.markdown("### Category Details")
-    
+    # Show individual category details
     for category in categories:
         category_data = df[df['classification_desc'] == category]
-        if not category_data.empty and amount_col in category_data.columns:
+        if not category_data.empty:
             st.markdown(f"#### {category}")
             
-            # Calculate total amount in billions
-            amount = category_data[amount_col].iloc[0] / 1e9
+            # Calculate trends
+            column = ('current_month_outly_amt' if analysis_type == 'outlays' 
+                     else 'current_month_gross_rcpt_amt')
             
-            # Display metric
-            st.metric(
-                "Amount", 
-                f"${amount:.2f}B"
-            )
-            
-            # Show category raw data
-            with st.expander(f"View raw data for {category}"):
-                st.dataframe(category_data)
-            
-            st.markdown("---")
+            if column in category_data.columns:
+                current = category_data[column].iloc[0] / 1e9
+                
+                # Display metrics
+                st.metric("Current Value", f"${current:.2f}B")
+                
+                # Show raw data
+                with st.expander(f"View raw data for {category}"):
+                    st.dataframe(category_data)
+                
+                # Add a separator
+                st.markdown("---")
+            else:
+                st.info(f"No {column} data available for {category}")
         else:
             st.info(f"No data available for {category}")
 
-def display_treasury_diagnostics():
-    """Display diagnostic information about the Treasury API"""
-    st.subheader("🔍 Treasury API Diagnostics")
-    
-    if st.button("Run API Test"):
-        with st.spinner("Testing Treasury API..."):
-            try:
-                # Basic test of API connectivity
-                import requests
-                base_url = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service'
-                endpoint = '/v1/accounting/mts/mts_table_1'
-                test_url = f"{base_url}{endpoint}?page[number]=1&page[size]=1"
-                
-                response = requests.get(test_url)
-                
-                if response.status_code == 200:
-                    st.success(f"✅ API connection successful (Status code: {response.status_code})")
-                    
-                    # Try a specific known date
-                    test_date = "2023-05-31"
-                    test_url = f"{base_url}{endpoint}?fields=record_date&filter=record_date:eq:{test_date}&page[size]=1"
-                    date_response = requests.get(test_url)
-                    
-                    if date_response.status_code == 200 and date_response.json().get('data'):
-                        st.success(f"✅ Successfully retrieved data for {test_date}")
-                    else:
-                        st.warning(f"⚠️ No data available for test date {test_date}")
-                    
-                    # Try a sample of specific dates to find available data
-                    st.subheader("Testing Sample Dates")
-                    test_dates = [
-                        "2023-05-31", "2023-04-30", "2023-03-31", 
-                        "2023-02-28", "2023-01-31", "2022-12-31"
-                    ]
-                    
-                    available_dates = []
-                    for date in test_dates:
-                        test_url = f"{base_url}{endpoint}?fields=record_date&filter=record_date:eq:{date}&page[size]=1"
-                        date_response = requests.get(test_url)
-                        
-                        if date_response.status_code == 200 and date_response.json().get('data'):
-                            st.success(f"✅ {date}: Data available")
-                            available_dates.append(date)
-                        else:
-                            st.warning(f"⚠️ {date}: No data available")
-                    
-                    if available_dates:
-                        st.info(f"Use these dates in your analysis: {', '.join(available_dates)}")
-                else:
-                    st.error(f"❌ API connection failed (Status code: {response.status_code})")
-            
-            except Exception as e:
-                st.error(f"❌ Error testing API: {str(e)}")
-
 def display_treasury_tab():
-    """Display combined Treasury tab with diagnostics and dashboard"""
-    st.title("🏦 U.S. Treasury Analysis")
-    
+    """Display Treasury tab with improved diagnostics and dashboard"""
     # Create tabs for dashboard and diagnostics
     dashboard_tab, diagnostics_tab = st.tabs(["Dashboard", "Diagnostics"])
     
     with dashboard_tab:
         display_treasury_dashboard()
     
-    with diagnostics_tab
+    with diagnostics_tab:
+        st.title("🔍 Treasury API Diagnostics")
+        
+        if st.button("Run API Test"):
+            with st.spinner("Testing Treasury API..."):
+                try:
+                    # Basic test of API connectivity
+                    import requests
+                    base_url = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service'
+                    endpoint = '/v1/accounting/mts/mts_table_1'
+                    
+                    # Test basic connectivity
+                    test_url = f"{base_url}{endpoint}?page[number]=1&page[size]=1"
+                    response = requests.get(test_url)
+                    
+                    if response.status_code == 200:
+                        st.success(f"✅ API connection successful (Status code: {response.status_code})")
+                        
+                        # Try example API request that works
+                        test_date = "2023-05-31"
+                        example_url = f"{base_url}{endpoint}?fields=record_date,classification_desc,current_month_gross_rcpt_amt&filter=record_date:eq:{test_date}&page[size]=5"
+                        st.code(example_url, language="bash")
+                        
+                        sample_response = requests.get(example_url)
+                        if sample_response.status_code == 200:
+                            sample_data = sample_response.json()
+                            if 'data' in sample_data and sample_data['data']:
+                                st.success(f"✅ Successfully retrieved data with exact date filter")
+                                st.json(sample_data)
+                            else:
+                                st.warning(f"⚠️ No data returned for sample request")
+                        else:
+                            st.error(f"❌ Sample request failed (Status code: {sample_response.status_code})")
+                    else:
+                        st.error(f"❌ API connection failed (Status code: {response.status_code})")
+                
+                except Exception as e:
+                    st.error(f"❌ Error testing API: {str(e)}")
+
+# This function should be kept as it's imported by app.py
+def display_treasury_dashboard():
+    """Main function to display the Treasury dashboard"""
+    # Call display_treasury_tab which includes both the dashboard and diagnostics
+    display_treasury_tab()
+
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Treasury Dashboard",
+        page_icon="🏦",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    display_treasury_dashboard()
