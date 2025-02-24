@@ -19,31 +19,56 @@ def display_treasury_dashboard():
     with st.sidebar:
         st.header("Analysis Configuration")
         
-        # Date range selection
+        # Date range selection - FIXED
         st.subheader("Select Date Range")
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=90)
         
+        # Calculate default dates
+        default_end_date = datetime.now().date()
+        default_start_date = (default_end_date - timedelta(days=90))
+        
+        # Use session state to keep selected dates between reruns
+        if 'start_date' not in st.session_state:
+            st.session_state.start_date = default_start_date
+        if 'end_date' not in st.session_state:
+            st.session_state.end_date = default_end_date
+        
+        # Date input with better constraints
         start_date = st.date_input(
             "Start Date",
-            value=start_date,
-            max_value=end_date
+            value=st.session_state.start_date,
+            max_value=default_end_date,
+            help="Select start date for the analysis period"
         )
         
         end_date = st.date_input(
             "End Date",
-            value=end_date,
-            max_value=datetime.now()
+            value=st.session_state.end_date,
+            min_value=start_date,
+            max_value=default_end_date,
+            help="Select end date for the analysis period"
         )
+        
+        # Update session state
+        st.session_state.start_date = start_date
+        st.session_state.end_date = end_date
+        
+        # Show selected date range 
+        st.info(f"Selected range: {start_date} to {end_date} ({(end_date - start_date).days + 1} days)")
         
         # Category selection
         st.subheader("Select Categories")
+        default_categories = ['SNAP', 'NIH', 'VA']
+        if 'categories' not in st.session_state:
+            st.session_state.categories = default_categories
+            
         categories = st.multiselect(
             "Program Categories",
             options=list(fetcher.program_categories.keys()),
-            default=['SNAP', 'NIH', 'VA'],
+            default=st.session_state.categories,
             help="Choose departments/programs to analyze"
         )
+        
+        st.session_state.categories = categories
         
         # Analysis type
         st.subheader("Analysis Options")
@@ -60,7 +85,11 @@ def display_treasury_dashboard():
         )
 
     # Main content area
-    if st.button("🔄 Run Analysis"):
+    if st.button("🔄 Run Analysis", key="run_analysis"):
+        if not categories:
+            st.warning("Please select at least one category to analyze")
+            return
+            
         with st.spinner("Fetching Treasury data..."):
             try:
                 # Get treasury data
@@ -89,9 +118,24 @@ def display_treasury_dashboard():
                         display_detailed_analysis(df, categories, analysis_type)
                 else:
                     st.error("No data available for the selected parameters.")
+                    st.info("""
+                    This could be due to:
+                    - The selected date range might not have data available
+                    - The selected categories might not have records for this period
+                    - The Treasury API might be experiencing issues
+                    
+                    Try selecting a different date range or different categories.
+                    """)
             
             except Exception as e:
                 st.error(f"Error during analysis: {str(e)}")
+                st.info("""
+                Troubleshooting tips:
+                - Check your internet connection
+                - Try a smaller date range
+                - Try different categories
+                - The Treasury API might be temporarily unavailable
+                """)
 
 def display_overview(df: pd.DataFrame, fetcher: TreasuryDataFetcher, 
                     categories: List[str], frequency: str, analysis_type: str):
@@ -109,14 +153,17 @@ def display_overview(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
     metrics = calculate_summary_metrics(df, categories, analysis_type)
     
     # Display metrics in columns
-    cols = st.columns(len(metrics))
-    for col, metric in zip(cols, metrics):
-        with col:
-            st.metric(
-                label=metric['category'],
-                value=f"${metric['current_value']:.2f}B",
-                delta=f"{metric['change']:.1f}%"
-            )
+    cols = st.columns(len(metrics)) if metrics else st.columns(1)
+    if metrics:
+        for col, metric in zip(cols, metrics):
+            with col:
+                st.metric(
+                    label=metric['category'],
+                    value=f"${metric['current_value']:.2f}B",
+                    delta=f"{metric['change']:.1f}%"
+                )
+    else:
+        st.info("No metrics available for the selected data")
 
 def create_treasury_plot(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
                         categories: List[str], frequency: str, plot_type: str) -> go.Figure:
@@ -132,6 +179,9 @@ def create_treasury_plot(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
     for category in categories:
         category_data = df[df['classification_desc'] == category].copy()
         
+        if category_data.empty:
+            continue
+            
         if frequency == 'seven_day_ma':
             category_data = fetcher.calculate_moving_average(category_data)
             plot_data = category_data.set_index('record_date')[f'{amount_column}_ma']
@@ -190,7 +240,7 @@ def calculate_summary_metrics(df: pd.DataFrame, categories: List[str],
     
     for category in categories:
         category_data = df[df['classification_desc'] == category]
-        if not category_data.empty:
+        if not category_data.empty and len(category_data) > 0:
             current_value = category_data[column].iloc[0] / 1e9  # Convert to billions
             prev_value = category_data[column].iloc[1] / 1e9 if len(category_data) > 1 else current_value
             pct_change = ((current_value / prev_value) - 1) * 100 if prev_value != 0 else 0
@@ -248,7 +298,7 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
                      else 'current_month_gross_rcpt_amt')
             
             current = category_data[column].iloc[0] / 1e9
-            avg_30d = category_data[column].head(30).mean() / 1e9
+            avg_30d = category_data[column].head(30).mean() / 1e9 if len(category_data) >= 30 else None
             avg_90d = category_data[column].mean() / 1e9
             
             # Display metrics
@@ -256,9 +306,21 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
             with cols[0]:
                 st.metric("Current Value", f"${current:.2f}B")
             with cols[1]:
-                st.metric("30-Day Average", f"${avg_30d:.2f}B")
+                if avg_30d is not None:
+                    st.metric("30-Day Average", f"${avg_30d:.2f}B")
+                else:
+                    st.metric("30-Day Average", "Insufficient data")
             with cols[2]:
                 st.metric("90-Day Average", f"${avg_90d:.2f}B")
             
             # Add a separator
             st.markdown("---")
+
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Treasury Dashboard",
+        page_icon="🏦",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    display_treasury_dashboard()
