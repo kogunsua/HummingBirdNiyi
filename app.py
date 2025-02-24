@@ -12,17 +12,23 @@ import yfinance as yf
 from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from config import Config, MODEL_DESCRIPTIONS
 from data_fetchers import AssetDataFetcher, EconomicIndicators
+
+# Import from forecasting.py
 from forecasting import (
     prophet_forecast,
     create_forecast_plot,
-    display_metrics,
-    display_confidence_analysis,
     add_technical_indicators
 )
+
+# Import from forecast_display.py
+from forecast_display import (
+    display_forecast_results,
+    display_sentiment_impact_analysis,
+    display_sentiment_impact_results
+)
+
 from sentiment_analyzer import (
     MultiSourceSentimentAnalyzer,
-    display_sentiment_impact_analysis,
-    display_sentiment_impact_results,
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
@@ -133,21 +139,6 @@ def get_user_inputs() -> Tuple[str, str, int]:
     
     return asset_type, symbol, periods
 
-def get_dividend_inputs() -> list:
-    """Get user inputs for dividend analysis"""
-    st.markdown("### 💰 Monthly Dividend Stock Analysis")
-    
-    # Allow users to input custom tickers
-    custom_tickers = st.text_input(
-        "Enter Stock Symbol",
-        "MAIN",
-        help="Enter stock symbol (e.g.MAIN)"
-    )
-    
-    # Convert input string to list and clean up
-    tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
-    return tickers
-
 def get_sentiment_settings() -> Tuple[int, float, str]:
     """Get user settings for sentiment analysis"""
     col1, col2, col3 = st.columns(3)
@@ -185,8 +176,8 @@ def process_forecast(
     """Process forecast data with or without sentiment analysis"""
     try:
         if forecast_type == "Price Only":
-            forecast, error = prophet_forecast(price_data, periods)
-            impact_metrics = {}
+            forecast, error_metrics = prophet_forecast(price_data, periods)
+            impact_metrics = {"error_metrics": error_metrics}
         else:
             forecast, impact_metrics = update_forecasting_process(
                 price_data, 
@@ -200,57 +191,6 @@ def process_forecast(
         logger.error(f"Error in forecast processing: {str(e)}")
         st.error("Failed to process forecast. Please try different parameters.")
         return None, {}
-
-def display_forecast_results(
-    price_data: pd.DataFrame,
-    forecast: pd.DataFrame,
-    impact_metrics: Dict,
-    forecast_type: str,
-    asset_type: str,
-    symbol: str
-):
-    """Display forecast results and visualizations"""
-    try:
-        # Display metrics section
-        st.markdown("### 📊 Market Metrics & Analysis")
-        display_metrics(price_data, forecast, asset_type, symbol)
-        
-        # Display sentiment impact results if available
-        if impact_metrics and forecast_type == "Price + Market Sentiment":
-            display_sentiment_impact_results(impact_metrics)
-        
-        # Display forecast plot
-        st.markdown("### 📈 Forecast Visualization")
-        fig = create_forecast_plot(
-            price_data, 
-            forecast,
-            "Enhanced Prophet" if forecast_type == "Price + Market Sentiment" else "Prophet",
-            symbol
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Display confidence analysis
-        display_confidence_analysis(forecast)
-        
-        # Display detailed forecast data
-        with st.expander("🔍 View Detailed Forecast Data"):
-            st.dataframe(
-                forecast.style.highlight_max(['yhat'], color='lightgreen')
-                .highlight_min(['yhat'], color='lightpink')
-            )
-            
-            # Add download button for forecast data
-            csv = forecast.to_csv(index=False)
-            st.download_button(
-                label="Download Forecast Data",
-                data=csv,
-                file_name=f"{symbol}_forecast.csv",
-                mime="text/csv",
-            )
-    
-    except Exception as e:
-        logger.error(f"Error displaying forecast results: {str(e)}")
-        st.error("Failed to display forecast results.")
 
 def display_economic_indicators(economic_data, selected_indicator, economic_indicators):
     """Display economic indicators data"""
@@ -270,7 +210,7 @@ def main():
             layout="wide"
         )
 
-        #Create Config instance at the start - ADD  THIS LINE
+        #Create Config instance at the start
         config = Config()
         
         # Display header
@@ -399,7 +339,7 @@ def main():
             # Analyze button
             if st.button("🔍 Analyze Dividends"):
                 try:
-                    # Initialize DividendAnalyzer with Config - MODIFY THESE LINES
+                    # Initialize DividendAnalyzer with Config
                     analyzer = DividendAnalyzer()
                     analyzer.config = config  # Add this line
                     tickers = [t.strip().upper() for t in custom_tickers.split(',')]
