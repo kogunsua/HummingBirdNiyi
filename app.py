@@ -1,4 +1,4 @@
-## app.py
+# app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -26,16 +26,9 @@ from sentiment_analyzer import (
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
-# Add Treasury imports
-from treasurydata import TreasuryDataFetcher
-from treasury_interface import (
-    display_treasury_dashboard,
-    display_overview, 
-    display_alerts, 
-    display_detailed_analysis, 
-    create_treasury_plot,
-    calculate_summary_metrics
-)
+
+# Import Treasury modules - you already have these files
+from treasury_interface import display_treasury_dashboard
 
 # Configure logging
 logging.basicConfig(
@@ -418,7 +411,7 @@ def main():
         
         # Add Treasury Analysis Tab
         with treasury_tab:
-            # Use the imported treasury dashboard function
+            # Call the imported treasury dashboard function directly
             display_treasury_dashboard()
 
     except Exception as e:
