@@ -36,7 +36,7 @@ class TreasuryDataFetcher:
         self.significant_change_threshold = 15.0
         self.critical_cut_threshold = -30.0
         
-        # Define program categories with known data availability
+        # Define program categories
         self.program_categories = {
             'SNAP': 'Supplemental Nutrition Assistance Program',
             'NIH': 'National Institutes of Health',
@@ -46,17 +46,7 @@ class TreasuryDataFetcher:
             'HUD': 'Housing and Urban Development',
             'DOD': 'Department of Defense',
             'HHS': 'Health and Human Services',
-            'DHS': 'Department of Homeland Security',
-            'Commerce': 'Department of Commerce',
-            'Defense': 'Department of Defense',
-            'Education': 'Department of Education',
-            'Energy': 'Department of Energy',
-            'Interior': 'Department of Interior',
-            'Justice': 'Department of Justice',
-            'Labor': 'Department of Labor',
-            'State': 'Department of State',
-            'Transportation': 'Department of Transportation',
-            'Treasury': 'Department of Treasury'
+            'DHS': 'Department of Homeland Security'
         }
         
         # Known available dates (based on your example API call)
@@ -105,9 +95,8 @@ class TreasuryDataFetcher:
             response.raise_for_status()
             data = response.json()
             
-            if 'data' not in data or not data['data']:
-                print("No data found in API response")
-                return pd.DataFrame()  # Return empty DataFrame instead of raising
+            if 'data' not in data:
+                raise ValueError("No data found in API response")
                 
             df = pd.DataFrame(data['data'])
             df['record_date'] = pd.to_datetime(df['record_date'])
@@ -124,7 +113,7 @@ class TreasuryDataFetcher:
             
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data: {e}")
-            return pd.DataFrame()  # Return empty DataFrame instead of raising
+            raise
 
     def calculate_moving_average(self, df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
         """
@@ -141,9 +130,6 @@ class TreasuryDataFetcher:
         Detect significant changes in funding and generate alerts
         """
         alerts = []
-        if df.empty:
-            return alerts
-            
         df = df.sort_values('record_date')
         
         for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt']:
@@ -245,9 +231,7 @@ class TreasuryDataFetcher:
         
         for category in categories:
             category_data = df[df['classification_desc'] == category].copy()
-            if category_data.empty:
-                continue
-                
+            
             if frequency == 'seven_day_ma':
                 category_data = self.calculate_moving_average(category_data)
                 plot_data = category_data.set_index('record_date')[f'{amount_column}_ma']
@@ -283,9 +267,8 @@ class TreasuryDataFetcher:
         return fig
 
     def analyze_treasury_data(self, 
-                            specific_date: Optional[str] = None,
-                            start_date: Optional[datetime] = None,
-                            end_date: Optional[datetime] = None,
+                            start_date: datetime,
+                            end_date: datetime,
                             categories: Optional[List[str]] = None,
                             frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
         """
@@ -299,58 +282,36 @@ class TreasuryDataFetcher:
                 'current_month_outly_amt'
             ]
             
-            # If specific date is provided, use it (more reliable)
-            if specific_date:
-                url = self.build_url(
-                    fields=fields,
-                    specific_date=specific_date,
-                    outlays=True
-                )
-            # Otherwise use date range (less reliable)
-            elif start_date and end_date:
-                url = self.build_url(
-                    fields=fields,
-                    start_date=start_date.strftime('%Y-%m-%d'),
-                    end_date=end_date.strftime('%Y-%m-%d'),
-                    outlays=True
-                )
-            else:
-                # If no dates provided, use the most recent available date
-                url = self.build_url(
-                    fields=fields,
-                    specific_date=self.available_dates[0],  # Most recent date first
-                    outlays=True
-                )
+            # Use exact date filtering which works better with the API
+            # Instead of using a date range, we'll use the first available date from our list
+            specific_date = self.available_dates[0]  # Use most recent date
+            
+            url = self.build_url(
+                fields=fields,
+                specific_date=specific_date,
+                outlays=True
+            )
             
             df = self.fetch_data(url)
             
-            if not df.empty:
-                # Use provided categories or default ones
-                categories = categories or list(self.program_categories.keys())[:5]
+            if df is not None:
+                categories = categories or list(self.program_categories.keys())[:9]
                 all_alerts = []
                 
-                # Filter the DataFrame for the selected categories
-                filtered_df = df[df['classification_desc'].isin(categories)]
-                
-                if filtered_df.empty:
-                    return filtered_df, [], []
-                
-                # Process alerts for each category
                 for category in categories:
-                    category_data = filtered_df[filtered_df['classification_desc'] == category]
-                    if not category_data.empty:
-                        alerts = self.detect_funding_changes(category_data, category)
-                        all_alerts.extend(alerts)
+                    category_data = df[df['classification_desc'] == category]
+                    alerts = self.detect_funding_changes(category_data, category)
+                    all_alerts.extend(alerts)
                 
                 recommendations = self.generate_recommendations(all_alerts)
                 
                 return df, all_alerts, recommendations
             
-            return pd.DataFrame(), [], []
+            return None, [], []
             
         except Exception as e:
             print(f"Analysis error: {e}")
-            return pd.DataFrame(), [], []
+            return None, [], []
 
     def get_available_dates(self) -> List[str]:
         """Return list of dates known to have data"""
@@ -372,21 +333,23 @@ def main():
     """
     fetcher = TreasuryDataFetcher()
     
-    # Example analysis using specific date (more reliable)
-    specific_date = "2023-05-31"  # Use a known date with data
-    categories = ['DOD', 'HHS', 'VA']
+    # Example analysis
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=90)
+    categories = ['SNAP', 'NIH', 'VA']
     
     try:
         df, alerts, recommendations = fetcher.analyze_treasury_data(
-            specific_date=specific_date,
-            categories=categories
+            start_date,
+            end_date,
+            categories
         )
         
-        if not df.empty:
+        if df is not None:
             print("\nAnalysis Results:")
             print("-" * 50)
             print(f"Total records: {len(df)}")
-            print(f"Date: {specific_date}")
+            print(f"Date range: {df['record_date'].min()} to {df['record_date'].max()}")
             
             print("\nAlerts:")
             for alert in alerts:
@@ -400,8 +363,6 @@ def main():
             fig = fetcher.plot_treasury_visualization(df, categories=categories)
             fig.savefig('treasury_analysis.png', bbox_inches='tight')
             print("\nAnalysis plot saved as 'treasury_analysis.png'")
-        else:
-            print(f"No data available for the date {specific_date}")
     
     except Exception as e:
         print(f"An error occurred: {e}")
