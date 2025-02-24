@@ -1,4 +1,48 @@
-# treasury_interface.py
+def create_treasury_plot(df: pd.DataFrame, fetcher: TreasuryDataFetcher,
+                        categories: List[str], frequency: str, plot_type: str) -> go.Figure:
+    """Create interactive Plotly visualization of Treasury data"""
+    fig = go.Figure()
+    
+    # Determine which columns to use based on what's available in the data
+    # For Daily Treasury Statement data
+    if plot_type == 'outlays':
+        if 'current_month_outly_amt' in df.columns:
+            amount_column = 'current_month_outly_amt'
+        elif 'withdrawal_amount' in df.columns:
+            amount_column = 'withdrawal_amount'
+        elif 'transaction_today_amt' in df.columns:
+            amount_column = 'transaction_today_amt'
+        elif 'today' in df.columns:
+            amount_column = 'today'
+        else:
+            # No appropriate column found
+            st.warning("No outlay data column found in the dataset")
+            return fig
+    else:  # receipts
+        if 'current_month_gross_rcpt_amt' in df.columns:
+            amount_column = 'current_month_gross_rcpt_amt'
+        elif 'deposit_amount' in df.columns:
+            amount_column = 'deposit_amount'
+        elif 'mtd' in df.columns:
+            amount_column = 'mtd'
+        elif 'transaction_mtd_amt' in df.columns:
+            amount_column = 'transaction_mtd_amt'
+        else:
+            # No appropriate column found
+            st.warning("No receipts data column found in the dataset")
+            return fig
+    
+    for category in categories:
+        # Make sure we're using the right classification column
+        if 'classification_desc' in df.columns:
+            category_data = df[df['classification_desc'] == category].copy()
+        elif 'account_type' in df.columns and category in df['account_type'].values:
+            category_data = df[df['account_type'] == category].copy()
+        elif 'account_desc' in df.columns and category in df['account_desc'].values:
+            category_data = df[df['account_desc'] == category].copy()
+        else:
+            continue
+        # treasury_interface.py
 
 import streamlit as st
 from datetime import datetime, timedelta
@@ -11,6 +55,7 @@ from treasurydata import TreasuryDataFetcher
 def display_treasury_dashboard_internal():
     """Main function to display the Treasury dashboard"""
     st.title("🏦 U.S. Treasury Daily Statement Analysis")
+    st.markdown("### 2024 Daily Treasury Data")
     
     # Initialize TreasuryDataFetcher
     fetcher = TreasuryDataFetcher()
@@ -43,7 +88,7 @@ def display_treasury_dashboard_internal():
         
         # Show information about date selection approach
         st.info(f"Selected report date: {selected_date}")
-        st.write("The Treasury API works best with specific report dates.")
+        st.write("Using Daily Treasury Statement (DTS) data for 2024 onward.")
         
         # Option to auto-detect available categories
         auto_detect = st.checkbox("Auto-detect available categories", value=True,
@@ -76,7 +121,7 @@ def display_treasury_dashboard_internal():
         analysis_type = st.radio(
             "Data Type",
             options=['outlays', 'receipts'],
-            help="Choose between outlays or receipts analysis"
+            help="Choose between outlays (withdrawals) or receipts (deposits) analysis"
         )
         
         frequency = st.selectbox(
