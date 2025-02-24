@@ -1,4 +1,4 @@
-# app.py
+## app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -26,6 +26,16 @@ from sentiment_analyzer import (
     get_sentiment_data
 )
 from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+# Add Treasury imports
+from treasurydata import TreasuryDataFetcher
+from treasury_interface import (
+    display_treasury_dashboard,
+    display_overview, 
+    display_alerts, 
+    display_detailed_analysis, 
+    create_treasury_plot,
+    calculate_summary_metrics
+)
 
 # Configure logging
 logging.basicConfig(
@@ -249,6 +259,15 @@ def display_forecast_results(
         logger.error(f"Error displaying forecast results: {str(e)}")
         st.error("Failed to display forecast results.")
 
+def display_economic_indicators(economic_data, selected_indicator, economic_indicators):
+    """Display economic indicators data"""
+    st.markdown("### 📉 Economic Indicators")
+    st.write(f"Selected indicator: {Config.INDICATORS.get(selected_indicator, selected_indicator)}")
+    
+    # Create visualization for the economic indicator
+    fig = economic_indicators.create_indicator_plot(economic_data, selected_indicator)
+    st.plotly_chart(fig, use_container_width=True)
+
 def main():
     try:
         # Page configuration
@@ -265,7 +284,11 @@ def main():
         display_header()
         
         # Create tabs for different analyses
-        forecast_tab, dividend_tab = st.tabs(["📈 Price Forecast", "💰 Dividend Analysis"])
+        forecast_tab, dividend_tab, treasury_tab = st.tabs([
+            "📈 Price Forecast", 
+            "💰 Dividend Analysis",
+            "🏦 Treasury Analysis"
+        ])
         
         with forecast_tab:
             # Get sidebar inputs
@@ -392,6 +415,11 @@ def main():
                     logger.error(f"Dividend analysis error: {str(e)}")
                     st.error("An error occurred during dividend analysis. Please try again.")
                     st.exception(e)
+        
+        # Add Treasury Analysis Tab
+        with treasury_tab:
+            # Use the imported treasury dashboard function
+            display_treasury_dashboard()
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}\n{traceback.format_exc()}")
@@ -404,4 +432,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
