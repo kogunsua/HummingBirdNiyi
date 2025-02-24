@@ -23,10 +23,21 @@ def display_treasury_dashboard_internal():
         st.subheader("Select Treasury Report Date")
         available_dates = fetcher.get_available_dates()
         
+        # Get current year and month to display as default
+        from datetime import datetime
+        current_year = str(datetime.now().year)
+        
+        # Find the most recent date for the current year
+        default_index = 0
+        for i, date in enumerate(available_dates):
+            if date.startswith(current_year):
+                default_index = i
+                break
+        
         selected_date = st.selectbox(
             "Report Date",
             options=available_dates,
-            index=0,
+            index=default_index,
             help="Select a specific Treasury report date"
         )
         
@@ -298,6 +309,11 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
             display_cols.append(amount_col)
             filtered_df[amount_col] = filtered_df[amount_col] / 1e9  # Convert to billions
             
+            # Add year and month columns for better analysis
+            filtered_df['Year'] = filtered_df['record_date'].dt.year
+            filtered_df['Month'] = filtered_df['record_date'].dt.month_name()
+            display_cols.extend(['Year', 'Month'])
+            
             # Rename columns for display
             renamed_df = filtered_df[display_cols].rename(columns={
                 'classification_desc': 'Category',
@@ -306,6 +322,27 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
             })
             
             st.dataframe(renamed_df)
+            
+            # Show year-over-year comparison if data is available
+            years = sorted(filtered_df['Year'].unique(), reverse=True)
+            if len(years) > 1:
+                st.subheader("Year-over-Year Comparison")
+                
+                # Create a pivot table for year-over-year analysis
+                pivot_df = filtered_df.pivot_table(
+                    index=['classification_desc', 'Month'], 
+                    columns='Year', 
+                    values=amount_col,
+                    aggfunc='sum'
+                ) / 1e9  # Convert to billions
+                
+                # Calculate year-over-year change percentage
+                if len(years) >= 2:
+                    current_year = years[0]
+                    previous_year = years[1]
+                    pivot_df[f'YoY Change (%)'] = ((pivot_df[current_year] / pivot_df[previous_year]) - 1) * 100
+                
+                st.dataframe(pivot_df.reset_index().round(2))
         else:
             st.info(f"No {amount_col} data available")
     else:
