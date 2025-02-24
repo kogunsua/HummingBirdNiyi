@@ -45,20 +45,31 @@ def display_treasury_dashboard_internal():
         st.info(f"Selected report date: {selected_date}")
         st.write("The Treasury API works best with specific report dates.")
         
+        # Option to auto-detect available categories
+        auto_detect = st.checkbox("Auto-detect available categories", value=True,
+                                 help="Automatically find which categories have data for the selected date")
+        
         # Category selection
         st.subheader("Select Categories")
-        default_categories = ['SNAP', 'NIH', 'VA']
-        if 'categories' not in st.session_state:
-            st.session_state.categories = default_categories
-            
-        categories = st.multiselect(
-            "Program Categories",
-            options=list(fetcher.program_categories.keys()),
-            default=st.session_state.categories,
-            help="Choose departments/programs to analyze"
-        )
         
-        st.session_state.categories = categories
+        # If first time or reset requested, use defaults
+        if 'categories' not in st.session_state or auto_detect:
+            st.session_state.categories = []
+        
+        if auto_detect:
+            st.info("Auto-detection enabled. Categories with data will be automatically selected.")
+            # Categories will be auto-detected during data fetch
+            categories = st.session_state.categories
+        else:
+            # Manual selection from all possible categories
+            categories = st.multiselect(
+                "Program Categories",
+                options=list(fetcher.program_categories.keys()),
+                default=st.session_state.categories if st.session_state.categories else ['SNAP', 'NIH', 'VA'],
+                help="Choose departments/programs to analyze"
+            )
+            
+            st.session_state.categories = categories
         
         # Analysis type
         st.subheader("Analysis Options")
@@ -76,8 +87,8 @@ def display_treasury_dashboard_internal():
 
     # Main content area
     if st.button("🔄 Run Analysis", key="run_analysis"):
-        if not categories:
-            st.warning("Please select at least one category to analyze")
+        if not auto_detect and not categories:
+            st.warning("Please select at least one category to analyze or enable auto-detection")
             return
             
         with st.spinner("Fetching Treasury data..."):
@@ -90,11 +101,25 @@ def display_treasury_dashboard_internal():
                 df, alerts, recommendations = fetcher.analyze_treasury_data(
                     start_date=start_date,
                     end_date=end_date,
-                    categories=categories,
+                    categories=categories if not auto_detect else None,
                     frequency=frequency
                 )
                 
                 if df is not None and not df.empty:
+                    # If auto-detect is enabled, update the session state with detected categories
+                    if auto_detect:
+                        # Get available categories from the data
+                        available_cats = df['classification_desc'].unique()
+                        # Filter to known categories
+                        known_cats = [cat for cat in available_cats if cat in fetcher.program_categories]
+                        if known_cats:
+                            categories = known_cats
+                            st.session_state.categories = categories
+                        else:
+                            # If no known categories, use the first 10 available
+                            categories = list(available_cats)[:10]
+                            st.session_state.categories = categories
+                    
                     # Create tabs for different views
                     overview_tab, alerts_tab, details_tab = st.tabs([
                         "📊 Overview",
@@ -114,10 +139,11 @@ def display_treasury_dashboard_internal():
                     st.error("No data available for the selected parameters.")
                     st.info("""
                     This could be due to:
+                    - The selected report date might not have data available
                     - The selected categories might not have records for this period
                     - The Treasury API might be experiencing issues
                     
-                    Try selecting different categories.
+                    Try selecting a different report date or enabling auto-detection of categories.
                     """)
             
             except Exception as e:
@@ -125,7 +151,8 @@ def display_treasury_dashboard_internal():
                 st.info("""
                 Troubleshooting tips:
                 - Check your internet connection
-                - Try different categories
+                - Try a different report date
+                - Enable auto-detection of categories
                 - The Treasury API might be temporarily unavailable
                 """)
     else:
