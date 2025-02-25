@@ -267,133 +267,87 @@ class TreasuryDataFetcher:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data: {e}")
             raise
-
+            
     def fetch_treasury_data(self, 
-                           start_date: datetime,
-                           end_date: datetime,
-                           categories: List[str]) -> pd.DataFrame:
-        """
-        Fetches comprehensive Treasury data for the specified date range and categories
+                       start_date: datetime,
+                       end_date: datetime,
+                       categories: List[str]) -> pd.DataFrame:
+    """
+    Fetches comprehensive Treasury data for the specified date range and categories
+    
+    Args:
+        start_date: Start date for data retrieval
+        end_date: End date for data retrieval
+        categories: List of category codes to retrieve data for
         
-        This method attempts to fetch data from multiple Treasury APIs and combine the results
-        to provide the most complete picture of federal spending.
-        
-        Args:
-            start_date: Start date for data retrieval
-            end_date: End date for data retrieval
-            categories: List of category codes to retrieve data for
-            
-        Returns:
-            Combined DataFrame with all available data
-        """
-        # Format dates for API
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        end_date_str = end_date.strftime('%Y-%m-%d')
-        
-        # Common fields for all API requests
-        common_fields = [
-            'record_date',
-            'classification_desc',
-            'security_desc',
-            'account_desc'
-        ]
-        
-        # Build filters
-        
-    def analyze_treasury_data(self,
-                            start_date: datetime,
-                            end_date: datetime,
-                            categories: List[str],
-                            frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
-        """
-        Comprehensive analysis of treasury data with alerts and recommendations
-
-        Args:
-            start_date: Start date for analysis
-            end_date: End date for analysis
-            categories: List of category codes to analyze
-            frequency: Data frequency ('daily', 'weekly', or 'seven_day_ma')
-
-        Returns:
-            Tuple containing:
-              - DataFrame with analyzed data
-              - List of alert dictionaries
-              - List of recommendation strings
-        """
+    Returns:
+        Combined DataFrame with all available data
+    """
+    # Format dates for API
+    start_date_str = start_date.strftime('%Y-%m-%d')
+    end_date_str = end_date.strftime('%Y-%m-%d')
+    
+    # Common fields for all API requests
+    common_fields = [
+        'record_date',
+        'classification_desc',
+        'security_desc',
+        'account_desc',
+        'current_month_outly_amt',
+        'current_month_gross_rcpt_amt'
+    ]
+    
+    # Build filters for date range
+    date_filter = f"record_date:gte:{start_date_str},record_date:lte:{end_date_str}"
+    
+    # Initialize an empty list to store DataFrames
+    dataframes = []
+    
+    # Try to fetch data from multiple Treasury endpoints
+    for endpoint in [self.mts_table1_endpoint, self.mts_table3_endpoint, self.dts_endpoint]:
         try:
-            # Fetch the data
-            df = self.fetch_treasury_data(start_date, end_date, categories)
-
-            if df is None or df.empty:
-                return None, [], []
-
-            all_alerts = []
-
-            # Process data according to requested frequency
-            if frequency == 'seven_day_ma':
-                df = self.calculate_moving_average(df)
-            elif frequency == 'weekly':
-                # Group data by week using string-based grouping to avoid Period objects
-                df['week'] = df['record_date'].dt.strftime('%Y-%U')
-                weekly_groups = []
-
-                for category in categories:
-                    category_data = df[df['classification_desc'] == category]
-                    if not category_data.empty:
-                        # Group by week and calculate weekly sums
-                        weekly_data = category_data.groupby('week').agg({
-                            'current_month_outly_amt': 'sum',
-                            'current_month_gross_rcpt_amt': 'sum'
-                        }).reset_index()
-
-                        # Create a proper datetime from the week string (first day of week)
-                        def week_to_date(week_str):
-                            year, week_num = week_str.split('-')
-                            # Create a date object for the first day of the year
-                            first_day = datetime(int(year), 1, 1)
-                            # If the first day is not a Monday, move to the first Monday
-                            if first_day.weekday() != 0:
-                                first_day = first_day + timedelta(days=(7 - first_day.weekday()))
-                            # Add the weeks
-                            return first_day + timedelta(weeks=int(week_num))
-
-                        weekly_data['record_date'] = weekly_data['week'].apply(week_to_date)
-                        weekly_data['classification_desc'] = category
-                        weekly_data['internal_category'] = category
-
-                        weekly_groups.append(weekly_data)
-
-                if weekly_groups:
-                    df = pd.concat(weekly_groups, ignore_index=True)
-
-            # Process alerts for each category
-            for category in categories:
-                category_data = df[df['classification_desc'] == category]
-
-                if not category_data.empty:
-                    # Detect funding changes
-                    alerts = self.detect_funding_changes(category_data, category)
-                    all_alerts.extend(alerts)
-
-            # Generate recommendations
-            recommendations = self.generate_recommendations(df, all_alerts)
-
-            return df, all_alerts, recommendations
-
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            print(f"Analysis error: {e}")
-            return None, [], []
-            # Generate recommendations
-            recommendations = self.generate_recommendations(df, all_alerts)
+            url = self.build_url(
+                endpoint=endpoint,
+                fields=common_fields,
+                filters=[date_filter],
+                page_size=1000  # Fetch larger batches
+            )
             
-            return df, all_alerts, recommendations
+            df = self.fetch_data(url)
             
+            # If we got data, process it
+            if not df.empty:
+                # Map the classification descriptions to our category codes
+                df['internal_category'] = df['classification_desc'].apply(
+                    lambda x: next((code for key, code in self.api_category_mapping.items() 
+                                    if key in str(x).upper()), None)
+                )
+                
+                # Filter to only include categories we're interested in
+                filtered_df = df[df['internal_category'].isin(categories)]
+                
+                if not filtered_df.empty:
+                    dataframes.append(filtered_df)
+        
         except Exception as e:
-            print(f"Analysis error: {e}")
-            return None, [], []
-
+            print(f"Error fetching data from {endpoint}: {e}")
+            continue
+    
+    # Combine all dataframes
+    if dataframes:
+        combined_df = pd.concat(dataframes, ignore_index=True)
+        
+        # Sort by date descending
+        combined_df = combined_df.sort_values('record_date', ascending=False)
+        
+        # Remove duplicates if any
+        combined_df = combined_df.drop_duplicates(['record_date', 'classification_desc'])
+        
+        return combined_df
+    else:
+        # Return empty DataFrame if no data was found
+        return pd.DataFrame()
+    
     def get_available_dates(self) -> List[str]:
         """Return list of dates known to have data"""
         # Fetch the most recent available dates from the API
