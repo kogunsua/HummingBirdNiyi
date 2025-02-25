@@ -1,815 +1,630 @@
-# treasurydata.py
-# Enhanced Treasury Data Fetcher for real-time government spending tracking
-# This application fetches and analyzes data from the U.S. Treasury's APIs
-# Supports multiple time periods, outlay frequencies, and up to 9 spending categories
+# treasury_interface.py
 
-import requests
-import pandas as pd
-import numpy as np
+import streamlit as st
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-from typing import Dict, List, Optional, Tuple, Union
-import json
-from enum import Enum
-import time
+import plotly.graph_objects as go
+import pandas as pd
+from typing import List, Optional, Dict
+from treasurydata import TreasuryDataFetcher
 
-class TreasuryDataFetcher:
-    """
-    Enhanced class to handle fetching and processing real-time data from U.S. Treasury APIs
+def display_treasury_dashboard():
+    """Main function to display the Federal Spending Dashboard"""
+    st.title("🏦 Federal Government Spending Tracker")
+    st.subheader("Real-time spending visualization across government agencies")
     
-    This class provides methods to:
-    - Build API URLs with various parameters
-    - Fetch data from multiple Treasury APIs
-    - Process and clean the retrieved data
-    - Support different time periods (1, 3, 12, or 36 months)
-    - Support different outlay frequencies (daily, weekly, 7-day moving average)
-    - Track up to 9 federal spending categories
-    """
+    # Initialize TreasuryDataFetcher
+    fetcher = TreasuryDataFetcher()
     
-    def __init__(self):
-        """
-        Initialize the TreasuryDataFetcher with base API endpoints and configurations
-        """
-        # API configuration
-        self.base_url = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service'
-        self.mts_table1_endpoint = '/v1/accounting/mts/mts_table_1'
-        self.mts_table3_endpoint = '/v1/accounting/mts/mts_table_3'
-        self.mts_table5_endpoint = '/v1/accounting/mts/mts_table_5'
-        self.dts_endpoint = '/v1/accounting/dts/dts_table_1'
+    # Create sidebar controls
+    with st.sidebar:
+        st.header("Visualization Controls")
         
-        # Cache to store recent API responses and reduce API calls
-        self.cache = {}
-        self.cache_expiry = 3600  # Cache lifetime in seconds (1 hour)
+        # Time period selection
+        st.subheader("Select Time Period")
+        time_period = st.radio(
+            "Time Period",
+            options=["1 month", "3 months", "12 months", "36 months"],
+            index=1,  # Default to 3 months
+            help="Select the time period for analysis"
+        )
         
-        # Define thresholds for funding changes
-        self.significant_change_threshold = 15.0  # Percentage change
-        self.critical_cut_threshold = -30.0      # Percentage change
-        self.unusual_volatility_threshold = 35.0 # Volatility indicator
+        # Calculate dates based on selection
+        end_date = datetime.now().date()
         
-        # Expanded program categories to allow more detailed selection
-        # Category codes used internally mapped to human-readable names
-        self.program_categories = {
-            # Social Services
-            'SNAP': 'Supplemental Nutrition Assistance Program',
-            'TANF': 'Temporary Assistance for Needy Families',
-            'WIC': 'Women, Infants and Children Program',
-            'SSA': 'Social Security Administration',
-            'MEDICARE': 'Medicare Programs',
-            'MEDICAID': 'Medicaid',
-            'CHIP': 'Children\'s Health Insurance Program',
-            
-            # Health & Research
-            'NIH': 'National Institutes of Health',
-            'CDC': 'Centers for Disease Control',
-            'CMS': 'Centers for Medicare & Medicaid Services',
-            'FDA': 'Food and Drug Administration',
-            
-            # Education & Labor
-            'ED': 'Department of Education',
-            'PELL': 'Pell Grants',
-            'DOL': 'Department of Labor',
-            'UI': 'Unemployment Insurance',
-            
-            # Housing & Development
-            'HUD': 'Housing and Urban Development',
-            'SEC8': 'Section 8 Housing',
-            
-            # Security & Defense
-            'DOD': 'Department of Defense',
-            'MILPAY': 'Military Pay and Allowances',
-            'VA': 'Veterans Affairs',
-            'DHS': 'Department of Homeland Security',
-            'FEMA': 'Federal Emergency Management Agency',
-            'DOJ': 'Department of Justice',
-            
-            # Infrastructure & Transportation
-            'DOT': 'Department of Transportation',
-            'FAA': 'Federal Aviation Administration',
-            'FHWA': 'Federal Highway Administration',
-            
-            # Energy & Environment
-            'DOE': 'Department of Energy',
-            'EPA': 'Environmental Protection Agency',
-            
-            # Other Major Departments
-            'HHS': 'Health and Human Services',
-            'USDA': 'Department of Agriculture',
-            'STATE': 'Department of State',
-            'TREAS': 'Department of Treasury',
-            'INTREV': 'Internal Revenue Service',
-            'COMM': 'Department of Commerce',
-            'NASA': 'NASA',
-            'SBA': 'Small Business Administration',
-            
-            # Interest & Debt
-            'INTDEBT': 'Interest on the Public Debt',
-            'DEBTOPS': 'Public Debt Operations'
+        if time_period == "1 month":
+            start_date = end_date - timedelta(days=30)
+        elif time_period == "3 months":
+            start_date = end_date - timedelta(days=90)
+        elif time_period == "12 months":
+            start_date = end_date - timedelta(days=365)
+        else:  # 36 months
+            start_date = end_date - timedelta(days=365*3)
+        
+        # Show selected date range
+        st.info(f"Period: {start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}")
+        
+        # Outlay frequency selection
+        st.subheader("Outlay Frequency")
+        frequency = st.radio(
+            "Display outlays as:",
+            options=[
+                "Daily outlays",
+                "Weekly outlays",
+                "7-day moving average"
+            ],
+            help="Choose how to display the outlay data"
+        )
+        
+        # Map UI selection to data format
+        frequency_map = {
+            "Daily outlays": "daily",
+            "Weekly outlays": "weekly",
+            "7-day moving average": "seven_day_ma"
         }
         
-        # Dictionary to match Treasury API categories to our simplified categories
-        self.api_category_mapping = self._initialize_category_mapping()
-    
-    def _initialize_category_mapping(self) -> Dict:
-        """
-        Initialize mapping between Treasury API category names and our simplified categories
-        This helps normalize different naming conventions across different Treasury data sources
-        """
-        return {
-            # Example mappings - these would need to be expanded based on actual API responses
-            'SUPPLEMENTAL NUTRITION ASSISTANCE PROGRAM': 'SNAP',
-            'FOOD AND NUTRITION SERVICE': 'SNAP',
-            'SNAP BENEFITS': 'SNAP',
-            'FOOD STAMPS': 'SNAP',
-            
-            'NATIONAL INSTITUTES OF HEALTH': 'NIH',
-            'NIH GRANTS AND ACTIVITIES': 'NIH',
-            
-            'SOCIAL SECURITY BENEFITS': 'SSA',
-            'SOCIAL SECURITY ADMINISTRATION': 'SSA',
-            
-            'VETERANS BENEFITS AND SERVICES': 'VA',
-            'VETERANS AFFAIRS': 'VA',
-            'VETERANS BENEFITS': 'VA',
-            
-            'EDUCATION DEPARTMENT': 'ED',
-            'DEPARTMENT OF EDUCATION': 'ED',
-            'FEDERAL PELL GRANTS': 'PELL',
-            
-            'HOUSING AND URBAN DEVELOPMENT': 'HUD',
-            'HUD PROGRAMS': 'HUD',
-            'SECTION 8 HOUSING SUBSIDIES': 'SEC8',
-            
-            'DEFENSE DEPARTMENT': 'DOD',
-            'DEFENSE VENDOR PAYMENTS': 'DOD',
-            'MILITARY ACTIVE DUTY PAY': 'MILPAY',
-            'MILITARY RETIREMENT FUND': 'DOD',
-            
-            'HEALTH AND HUMAN SERVICES': 'HHS',
-            'HHS GRANTS AND ACTIVITIES': 'HHS',
-            
-            'HOMELAND SECURITY': 'DHS',
-            'DEPARTMENT OF HOMELAND SECURITY': 'DHS',
-            'FEMA DISASTER RELIEF': 'FEMA',
-            
-            'MEDICARE ADVANTAGE PAYMENTS': 'MEDICARE',
-            'MEDICARE BENEFITS': 'MEDICARE',
-            'MEDICARE PART D': 'MEDICARE',
-            
-            'MEDICAID GRANTS TO STATES': 'MEDICAID',
-            'MEDICAID VENDOR PAYMENTS': 'MEDICAID',
-            
-            'UNEMPLOYMENT INSURANCE BENEFITS': 'UI',
-            'UNEMPLOYMENT BENEFITS': 'UI',
-            
-            'INTEREST ON TREASURY SECURITIES': 'INTDEBT',
-            'PUBLIC DEBT CASH REDEMPTIONS': 'DEBTOPS',
-            
-            # Add more mappings as needed
-        }
-    
-    def build_url(self, 
-                  endpoint: str,
-                  fields: List[str],
-                  filters: Optional[List[str]] = None,
-                  sort_fields: Optional[List[str]] = None,
-                  page_size: int = 100,
-                  page_number: int = 1) -> str:
-        """
-        Builds a complete API URL with the specified parameters
+        # Category selection - allow up to 9 categories
+        st.subheader("Federal Outlay Categories")
         
-        Args:
-            endpoint: API endpoint to use
-            fields: List of fields to retrieve
-            filters: List of filter expressions
-            sort_fields: List of fields to sort by (prefix with - for descending)
-            page_size: Number of records per page
-            page_number: Page number to retrieve
-            
-        Returns:
-            Complete URL for the API request
-        """
-        fields_str = ','.join(fields)
-        url = f"{self.base_url}{endpoint}?fields={fields_str}"
+        # Get all available categories
+        all_categories = list(fetcher.program_categories.keys())
         
-        # Add filters if provided
-        if filters:
-            filter_str = '&'.join([f"filter={f}" for f in filters])
-            url += f"&{filter_str}"
-            
-        # Add sorting if provided
-        if sort_fields:
-            sort_str = ','.join(sort_fields)
-            url += f"&sort={sort_str}"
+        # Option to search or select
+        category_select_method = st.radio(
+            "Category selection method:",
+            options=["Select from list", "Search for categories"],
+            help="Choose how you want to select categories"
+        )
+        
+        if category_select_method == "Select from list":
+            # Display human-readable names but store the internal code
+            category_map = {v: k for k, v in fetcher.program_categories.items()}
+            selected_categories = st.multiselect(
+                "Select up to 9 categories:",
+                options=list(category_map.keys()),
+                default=[fetcher.program_categories["SNAP"], fetcher.program_categories["VA"]],
+                max_selections=9,
+                help="Choose up to 9 departments/programs to analyze"
+            )
+            # Convert back to internal codes
+            categories = [category_map[cat] for cat in selected_categories]
         else:
-            url += "&sort=-record_date"  # Default sort by date descending
+            # Search functionality
+            search_term = st.text_input(
+                "Search for categories",
+                help="Type to search for departments/programs"
+            ).lower()
             
-        # Add pagination
-        url += f"&page[number]={page_number}&page[size]={page_size}"
-        
-        return url
-    
-    def fetch_data(self, url: str, use_cache: bool = True) -> pd.DataFrame:
-        """
-        Fetches data from the API and converts it to a pandas DataFrame
-        
-        Args:
-            url: Complete API URL to fetch data from
-            use_cache: Whether to use cached data if available
+            filtered_categories = []
+            if search_term:
+                for code, name in fetcher.program_categories.items():
+                    if search_term in code.lower() or search_term in name.lower():
+                        filtered_categories.append((code, name))
+            else:
+                filtered_categories = list(fetcher.program_categories.items())
             
-        Returns:
-            DataFrame containing the API response data
-        """
-        # Check cache first if enabled
-        if use_cache and url in self.cache:
-            cache_time, cache_data = self.cache[url]
-            if time.time() - cache_time < self.cache_expiry:
-                return cache_data.copy()  # Return a copy to prevent cache modification
-        
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
+            # Display search results with checkboxes
+            st.write("Select from search results:")
+            selected_categories = []
             
-            if 'data' not in data:
-                raise ValueError("No data found in API response")
+            # Limit to first 15 matches for UI clarity
+            for code, name in filtered_categories[:15]:
+                if st.checkbox(f"{name} ({code})", key=f"search_{code}"):
+                    selected_categories.append(code)
+            
+            # Enforce max of 9 categories
+            if len(selected_categories) > 9:
+                st.warning("Only the first 9 selected categories will be displayed.")
+                categories = selected_categories[:9]
+            else:
+                categories = selected_categories
+
+        # Analytics options
+        st.subheader("Additional Options")
+        show_trend_lines = st.checkbox(
+            "Show trend lines",
+            value=True,
+            help="Display linear trend lines for each category"
+        )
+        
+        normalize_data = st.checkbox(
+            "Normalize data (percentage of total)",
+            value=False,
+            help="Show data as percentage of total spending instead of absolute values"
+        )
+
+    # Main content area
+    if not categories:
+        st.warning("Please select at least one category to analyze")
+    else:
+        with st.spinner("Fetching latest Treasury data..."):
+            try:
+                # Convert UI selections to API parameters
+                freq_param = frequency_map[frequency]
                 
-            df = pd.DataFrame(data['data'])
-            
-            # Convert date fields to datetime
-            if 'record_date' in df.columns:
-                df['record_date'] = pd.to_datetime(df['record_date'])
-            elif 'record_calendar_month' in df.columns:
-                df['record_date'] = pd.to_datetime(df['record_calendar_month'], format='%Y-%m')
-            elif 'reporting_date' in df.columns:
-                df['record_date'] = pd.to_datetime(df['reporting_date'])
-            
-            # Convert numeric columns
-            numeric_columns = [
-                'current_month_gross_rcpt_amt',
-                'current_month_outly_amt',
-                'current_month_deficit_surplus_amt',
-                'amt',
-                'today_amt',
-                'mtd_amt',
-                'fytd_amt'
-            ]
-            
-            for col in numeric_columns:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-            
-            # Store in cache if enabled
-            if use_cache:
-                self.cache[url] = (time.time(), df.copy())
-            
-            return df
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching data: {e}")
-            raise
-        
-    def fetch_treasury_data(self, 
-                           start_date: datetime,
-                           end_date: datetime,
-                           categories: List[str]) -> pd.DataFrame:
-        """
-        Fetches comprehensive Treasury data for the specified date range and categories
-        
-        This method attempts to fetch data from multiple Treasury APIs and combine the results
-        to provide the most complete picture of federal spending.
-        
-        Args:
-            start_date: Start date for data retrieval
-            end_date: End date for data retrieval
-            categories: List of category codes to retrieve data for
-            
-        Returns:
-            Combined DataFrame with all available data
-        """
-        # Format dates for API
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        end_date_str = end_date.strftime('%Y-%m-%d')
-        
-        # Common fields for all API requests
-        common_fields = [
-            'record_date',
-            'classification_desc',
-            'security_desc',
-            'account_desc'
-        ]
-        
-        # Build filters
-        date_filter = [
-            f"record_date:gte:{start_date_str}",
-            f"record_date:lte:{end_date_str}"
-        ]
-        
-        # Initialize list to store DataFrames from different sources
-        data_frames = []
-        
-        # 1. Try Monthly Treasury Statement Table 3 (Outlays)
-        try:
-            mts_fields = common_fields + ['current_month_outly_amt', 'prior_fytd_outly_amt']
-            mts_url = self.build_url(
-                endpoint=self.mts_table3_endpoint,
-                fields=mts_fields,
-                filters=date_filter,
-                page_size=1000
-            )
-            mts_df = self.fetch_data(mts_url)
-            
-            if not mts_df.empty:
-                # Map categories from API to our internal codes
-                mts_df['internal_category'] = mts_df['classification_desc'].apply(
-                    lambda x: self._map_api_category_to_internal(x)
+                # Get treasury data
+                df, alerts, recommendations = fetcher.analyze_treasury_data(
+                    start_date=datetime.combine(start_date, datetime.min.time()),
+                    end_date=datetime.combine(end_date, datetime.min.time()),
+                    categories=categories,
+                    frequency=freq_param
                 )
-                data_frames.append(mts_df)
-        except Exception as e:
-            print(f"Error fetching MTS Table 3 data: {e}")
+                
+                if df is not None and not df.empty:
+                    # Create tabs for different views
+                    visualization_tab, alerts_tab, details_tab = st.tabs([
+                        "📊 Spending Visualization",
+                        "🚨 Notable Changes",
+                        "📋 Detailed Analysis"
+                    ])
+                    
+                    with visualization_tab:
+                        display_spending_visualization(
+                            df, 
+                            fetcher, 
+                            categories, 
+                            freq_param, 
+                            "outlays",
+                            show_trend_lines,
+                            normalize_data
+                        )
+                    
+                    with alerts_tab:
+                        display_spending_alerts(alerts, recommendations)
+                    
+                    with details_tab:
+                        display_detailed_analysis(df, categories, "outlays")
+                else:
+                    st.error("No data available for the selected parameters.")
+                    st.info("""
+                    This could be due to:
+                    - The selected time period might not have data available yet
+                    - The selected categories might not have records for this period
+                    - There may be a delay in updating the Treasury data
+                    
+                    Try selecting a different time period or different categories.
+                    """)
+            except Exception as e:
+                st.error(f"Error retrieving spending data: {str(e)}")
+                st.info("""
+                Troubleshooting tips:
+                - Check your internet connection
+                - Try a smaller time period
+                - Try different categories
+                - The Treasury API might be temporarily unavailable
+                """)
+
+def display_spending_visualization(
+    df: pd.DataFrame, 
+    fetcher: TreasuryDataFetcher, 
+    categories: List[str], 
+    frequency: str, 
+    analysis_type: str,
+    show_trend_lines: bool = True,
+    normalize_data: bool = False
+):
+    """Display interactive visualization of federal spending data"""
+    st.subheader("Federal Spending Visualization")
+    
+    # Add description
+    st.markdown("""
+    This visualization shows federal government outlays (spending) across selected categories.
+    Data is sourced directly from the U.S. Treasury's Daily Treasury Statements.
+    """)
+    
+    # Create visualization
+    fig = create_spending_plot(
+        df, 
+        fetcher, 
+        categories, 
+        frequency, 
+        analysis_type,
+        show_trend_lines,
+        normalize_data
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display summary metrics - use columns to create a dashboard feel
+    st.subheader("Spending Summary (In Billions of Dollars)")
+    
+    # Calculate metrics for each category
+    metrics = calculate_summary_metrics(df, categories, analysis_type)
+    
+    # Create a grid of metrics
+    if metrics:
+        # Determine how many columns we need
+        cols_per_row = 3
+        num_rows = (len(metrics) + cols_per_row - 1) // cols_per_row
         
-        # 2. Try Daily Treasury Statement Table 1 (Daily spending)
-        try:
-            dts_fields = common_fields + ['today_amt', 'mtd_amt', 'fytd_amt']
-            dts_url = self.build_url(
-                endpoint=self.dts_endpoint,
-                fields=dts_fields,
-                filters=date_filter,
-                page_size=1000
-            )
-            dts_df = self.fetch_data(dts_url)
+        for row in range(num_rows):
+            cols = st.columns(cols_per_row)
+            for col_idx in range(cols_per_row):
+                metric_idx = row * cols_per_row + col_idx
+                if metric_idx < len(metrics):
+                    metric = metrics[metric_idx]
+                    with cols[col_idx]:
+                        st.metric(
+                            label=f"{metric['category']}",
+                            value=f"${metric['current_value']:.2f}B",
+                            delta=f"{metric['change']:.1f}%",
+                            delta_color="inverse" if analysis_type == "outlays" else "normal"
+                        )
+    else:
+        st.info("No spending metrics available for the selected data")
+    
+    # Add data download option
+    if not df.empty:
+        st.download_button(
+            label="Download data as CSV",
+            data=df.to_csv(index=False).encode('utf-8'),
+            file_name=f"federal_spending_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime='text/csv'
+        )
+
+def create_spending_plot(
+    df: pd.DataFrame, 
+    fetcher: TreasuryDataFetcher,
+    categories: List[str], 
+    frequency: str, 
+    plot_type: str,
+    show_trend_lines: bool = True,
+    normalize_data: bool = False
+) -> go.Figure:
+    """Create enhanced interactive Plotly visualization of federal spending data"""
+    fig = go.Figure()
+    
+    # Determine which column to use for the data
+    amount_column = 'current_month_outly_amt' if plot_type == 'outlays' else 'current_month_gross_rcpt_amt'
+    
+    # Calculate total spending per date if normalization is requested
+    date_totals = {}
+    if normalize_data:
+        for date in df['record_date'].unique():
+            date_df = df[df['record_date'] == date]
+            date_totals[date] = date_df[amount_column].sum()
+    
+    # Define a color palette for categories
+    colors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+    ]
+    
+    # Process each selected category
+    for i, category in enumerate(categories):
+        # Safety check to prevent index errors
+        color_idx = i % len(colors)
+        
+        category_data = df[df['classification_desc'] == category].copy()
+        
+        if category_data.empty:
+            continue
             
-            if not dts_df.empty:
-                # Map categories and rename columns to match MTS format
-                dts_df['internal_category'] = dts_df['classification_desc'].apply(
-                    lambda x: self._map_api_category_to_internal(x)
+        # Create the appropriate data series based on frequency
+        if frequency == 'seven_day_ma':
+            category_data = fetcher.calculate_moving_average(category_data)
+            x_values = category_data['record_date']
+            y_values = category_data[f'{amount_column}_ma'] / 1e9  # Convert to billions
+            label = f"{category} (7-day MA)"
+        elif frequency == 'weekly':
+            category_data['week'] = category_data['record_date'].dt.to_period('W')
+            weekly_data = category_data.groupby('week')[amount_column].sum() / 1e9
+            x_values = [pd.Period(x).to_timestamp() for x in weekly_data.index]
+            y_values = weekly_data.values
+            label = f"{category} (Weekly)"
+        else:  # daily
+            x_values = category_data['record_date']
+            y_values = category_data[amount_column] / 1e9  # Convert to billions
+            label = f"{category} (Daily)"
+        
+        # Normalize data if requested
+        if normalize_data:
+            normalized_values = []
+            for i, date in enumerate(x_values):
+                if date in date_totals and date_totals[date] > 0:
+                    normalized_values.append((y_values[i] * 1e9 / date_totals[date]) * 100)
+                else:
+                    normalized_values.append(0)
+            y_values = normalized_values
+        
+        # Add trace for this category
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=y_values,
+                name=label,
+                mode='lines+markers',
+                marker=dict(size=6, color=colors[color_idx]),
+                line=dict(width=2, color=colors[color_idx]),
+                hovertemplate='%{x}<br>%{y:.2f}' + (' %' if normalize_data else 'B $')
+            )
+        )
+        
+        # Add trend line if requested
+        if show_trend_lines and len(x_values) > 1:
+            # Convert x values to numeric for trendline calculation
+            x_numeric = range(len(x_values))
+            
+            # Calculate trend line using numpy's polyfit
+            import numpy as np
+            z = np.polyfit(x_numeric, y_values, 1)
+            p = np.poly1d(z)
+            trend_y = [p(x) for x in x_numeric]
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=x_values,
+                    y=trend_y,
+                    name=f"{category} trend",
+                    mode='lines',
+                    line=dict(color=colors[color_idx], width=1, dash='dash'),
+                    showlegend=False,
+                    hoverinfo='skip'
                 )
-                dts_df['current_month_outly_amt'] = dts_df['today_amt']
-                data_frames.append(dts_df)
-        except Exception as e:
-            print(f"Error fetching DTS Table 1 data: {e}")
-        
-        # 3. Combine and filter datasets
-        if not data_frames:
-            # If no real data available, generate sample data for demo
-            return self._generate_sample_data(start_date, end_date, categories)
-        
-        combined_df = pd.concat(data_frames, ignore_index=True)
-        
-        # Filter to only requested categories
-        filtered_df = combined_df[combined_df['internal_category'].isin(categories)]
-        
-        # If no data for selected categories, return sample data
-        if filtered_df.empty:
-            return self._generate_sample_data(start_date, end_date, categories)
-        
-        # Update classification_desc to use our internal category names
-        filtered_df['classification_desc'] = filtered_df['internal_category']
-        
-        # Sort by date (newest first) and remove duplicates
-        filtered_df = filtered_df.sort_values('record_date', ascending=False)
-        filtered_df = filtered_df.drop_duplicates(subset=['record_date', 'classification_desc'])
-        
-        return filtered_df
-    
-    def _map_api_category_to_internal(self, api_category: str) -> str:
-        """
-        Maps an API category name to our internal category code
-        
-        Args:
-            api_category: Category name from API
-            
-        Returns:
-            Internal category code or 'OTHER' if no match found
-        """
-        if not api_category or pd.isna(api_category):
-            return 'OTHER'
-            
-        # Try exact match first
-        if api_category in self.api_category_mapping:
-            return self.api_category_mapping[api_category]
-        
-        # Try case-insensitive match
-        api_category_upper = api_category.upper()
-        if api_category_upper in self.api_category_mapping:
-            return self.api_category_mapping[api_category_upper]
-        
-        # Try substring match
-        for api_name, internal_code in self.api_category_mapping.items():
-            if api_name in api_category_upper or api_category_upper in api_name:
-                return internal_code
-        
-        # Direct category code match
-        if api_category_upper in self.program_categories:
-            return api_category_upper
-        
-        return 'OTHER'
-    
-    def _generate_sample_data(self, 
-                            start_date: datetime,
-                            end_date: datetime,
-                            categories: List[str]) -> pd.DataFrame:
-        """
-        Generates realistic sample data when API data is unavailable
-        
-        Args:
-            start_date: Start date for generated data
-            end_date: End date for generated data
-            categories: List of category codes to generate data for
-            
-        Returns:
-            DataFrame with generated sample data
-        """
-        # Generate date range
-        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-        
-        # Base values and volatility for different categories
-        category_params = {
-            'SNAP': {'base': 180.0, 'volatility': 0.05, 'trend': 0.001},
-            'TANF': {'base': 42.0, 'volatility': 0.04, 'trend': 0.0005},
-            'NIH': {'base': 110.0, 'volatility': 0.08, 'trend': 0.002},
-            'SSA': {'base': 320.0, 'volatility': 0.03, 'trend': 0.0008},
-            'MEDICARE': {'base': 280.0, 'volatility': 0.06, 'trend': 0.0015},
-            'MEDICAID': {'base': 150.0, 'volatility': 0.07, 'trend': 0.001},
-            'VA': {'base': 90.0, 'volatility': 0.04, 'trend': 0.001},
-            'ED': {'base': 75.0, 'volatility': 0.09, 'trend': -0.0005},
-            'HUD': {'base': 65.0, 'volatility': 0.05, 'trend': 0.0002},
-            'DOD': {'base': 210.0, 'volatility': 0.08, 'trend': 0.0012},
-            'HHS': {'base': 160.0, 'volatility': 0.06, 'trend': 0.001},
-            'DHS': {'base': 80.0, 'volatility': 0.07, 'trend': 0.0008},
-            'PELL': {'base': 30.0, 'volatility': 0.1, 'trend': -0.0003},
-            'CDC': {'base': 45.0, 'volatility': 0.08, 'trend': 0.002},
-            'DOL': {'base': 50.0, 'volatility': 0.06, 'trend': 0.0005},
-            'UI': {'base': 25.0, 'volatility': 0.15, 'trend': -0.001},
-            'SEC8': {'base': 40.0, 'volatility': 0.04, 'trend': 0.0007},
-            'MILPAY': {'base': 60.0, 'volatility': 0.03, 'trend': 0.001},
-            'FEMA': {'base': 20.0, 'volatility': 0.25, 'trend': 0.0},
-            'DOJ': {'base': 35.0, 'volatility': 0.06, 'trend': 0.0004},
-            'DOT': {'base': 70.0, 'volatility': 0.07, 'trend': 0.001},
-            'FAA': {'base': 15.0, 'volatility': 0.05, 'trend': 0.0003},
-            'DOE': {'base': 30.0, 'volatility': 0.08, 'trend': 0.0006},
-            'EPA': {'base': 25.0, 'volatility': 0.07, 'trend': -0.0004},
-            'USDA': {'base': 55.0, 'volatility': 0.06, 'trend': 0.0005},
-            'STATE': {'base': 40.0, 'volatility': 0.08, 'trend': 0.0007},
-            'TREAS': {'base': 35.0, 'volatility': 0.05, 'trend': 0.0003},
-            'INTREV': {'base': 45.0, 'volatility': 0.04, 'trend': 0.0006},
-            'NASA': {'base': 22.0, 'volatility': 0.09, 'trend': 0.0002},
-            'SBA': {'base': 18.0, 'volatility': 0.12, 'trend': -0.0002},
-            'INTDEBT': {'base': 95.0, 'volatility': 0.03, 'trend': 0.002},
-            'DEBTOPS': {'base': 80.0, 'volatility': 0.04, 'trend': 0.001},
-            'CHIP': {'base': 15.0, 'volatility': 0.06, 'trend': 0.0008},
-            'FHWA': {'base': 45.0, 'volatility': 0.05, 'trend': 0.0006},
-            'COMM': {'base': 25.0, 'volatility': 0.07, 'trend': 0.0004},
-            'FDA': {'base': 18.0, 'volatility': 0.08, 'trend': 0.001},
-            'CMS': {'base': 60.0, 'volatility': 0.05, 'trend': 0.0015},
-        }
-        
-        # Default parameters for any category not in the map
-        default_params = {'base': 50.0, 'volatility': 0.08, 'trend': 0.0005}
-        
-        # Create rows for each date and category
-        rows = []
-        
-        for category in categories:
-            params = category_params.get(category, default_params)
-            base_value = params['base'] * 1e6  # Convert to millions
-            volatility = params['volatility']
-            trend = params['trend']
-            
-            # Add weekly and monthly patterns
-            for i, date in enumerate(date_range):
-                # Add trend
-                trend_factor = 1.0 + (trend * i)
-                
-                # Add weekly pattern (higher at month start, lower at end)
-                day_of_month = date.day
-                monthly_factor = 1.0 + (0.2 * (1.0 - day_of_month / 31.0))
-                
-                # Add weekly pattern (lower on weekends)
-                day_of_week = date.weekday()
-                weekly_factor = 1.0 if day_of_week < 5 else 0.3
-                
-                # Add some randomness
-                random_factor = np.random.normal(1.0, volatility)
-                
-                # Calculate final value
-                value = base_value * trend_factor * monthly_factor * weekly_factor * random_factor
-                
-                # Special case: add occasional spikes for FEMA (disaster relief)
-                if category == 'FEMA' and np.random.random() < 0.02:  # 2% chance of spike
-                    value *= np.random.uniform(3.0, 10.0)  # 3-10x spike
-                
-                # Add row to results
-                rows.append({
-                    'record_date': date,
-                    'classification_desc': category,
-                    'internal_category': category,
-                    'current_month_outly_amt': value,
-                    'current_month_gross_rcpt_amt': value * 0.8,  # Just for sample data
-                })
-        
-        # Create DataFrame
-        sample_df = pd.DataFrame(rows)
-        
-        # Add a random but plausible spending surge or drop for demo purposes
-        if len(categories) > 0 and len(date_range) > 14:
-            # Pick a random category and date for the event
-            random_category = np.random.choice(categories)
-            random_date_idx = np.random.randint(7, len(date_range) - 7)
-            random_date = date_range[random_date_idx]
-            
-            # Create a spending surge or drop
-            is_surge = np.random.random() > 0.5
-            factor = np.random.uniform(1.5, 3.0) if is_surge else np.random.uniform(0.3, 0.7)
-            
-            # Apply the change over several days
-            for i in range(-3, 4):
-                date_idx = random_date_idx + i
-                if 0 <= date_idx < len(date_range):
-                    date = date_range[date_idx]
-                    mask = (sample_df['record_date'] == date) & (sample_df['classification_desc'] == random_category)
-                    # Gradually apply the change (stronger in the middle)
-                    adjustment = 1.0 + (factor - 1.0) * (1.0 - abs(i) / 3.0)
-                    sample_df.loc[mask, 'current_month_outly_amt'] *= adjustment
-        
-        return sample_df
-    
-    def calculate_moving_average(self, df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
-        """
-        Calculate moving average for time series data
-        
-        Args:
-            df: DataFrame containing time series data
-            days: Number of days for the moving average window
-            
-        Returns:
-            DataFrame with additional moving average columns
-        """
-        df = df.copy()
-        
-        # Ensure data is sorted by date
-        df = df.sort_values('record_date')
-        
-        # Calculate moving averages for relevant columns
-        for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt', 'today_amt', 'mtd_amt']:
-            if col in df.columns:
-                df[f'{col}_ma'] = df[col].rolling(window=days, min_periods=1).mean()
-        
-        return df
-
-    def detect_funding_changes(self, df: pd.DataFrame, category: str) -> List[Dict]:
-        """
-        Detect significant changes in funding and generate alerts
-        
-        Args:
-            df: DataFrame containing time series data for a category
-            category: Category name to analyze
-            
-        Returns:
-            List of alert dictionaries
-        """
-        alerts = []
-        
-        # Ensure DataFrame is sorted by date
-        df = df.sort_values('record_date')
-        
-        if len(df) < 2:
-            return alerts  # Not enough data to detect changes
-        
-        # Calculate period-over-period changes
-        for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt', 'today_amt']:
-            if col in df.columns:
-                # Calculate daily percentage change
-                df[f'{col}_pct_change'] = df[col].pct_change() * 100
-                
-                # Calculate 7-day change
-                if len(df) >= 7:
-                    df[f'{col}_7d_change'] = (df[col] / df[col].shift(7) - 1) * 100
-                
-                # Calculate 30-day change
-                if len(df) >= 30:
-                    df[f'{col}_30d_change'] = (df[col] / df[col].shift(30) - 1) * 100
-                
-                # Create alerts based on different change periods
-                for idx, row in df.iterrows():
-                    # Check 1-day change
-                    if pd.notnull(row[f'{col}_pct_change']):
-                        alert = self._create_alert(row, category, col, row[f'{col}_pct_change'], '1-day')
-                        if alert['alert_type']:
-                            alerts.append(alert)
-                    
-                    # Check 7-day change
-                    if f'{col}_7d_change' in df.columns and pd.notnull(row[f'{col}_7d_change']):
-                        alert = self._create_alert(row, category, col, row[f'{col}_7d_change'], '7-day')
-                        if alert['alert_type']:
-                            alerts.append(alert)
-                    
-                    # Check 30-day change
-                    if f'{col}_30d_change' in df.columns and pd.notnull(row[f'{col}_30d_change']):
-                        alert = self._create_alert(row, category, col, row[f'{col}_30d_change'], '30-day')
-                        if alert['alert_type']:
-                            alerts.append(alert)
-        
-        # Detect unusual volatility
-        for col in ['current_month_outly_amt', 'current_month_gross_rcpt_amt', 'today_amt']:
-            if col in df.columns and len(df) >= 7:
-                # Calculate rolling standard deviation and mean
-                rolling_std = df[col].rolling(window=7, min_periods=3).std()
-                rolling_mean = df[col].rolling(window=7, min_periods=3).mean()
-                
-                # Calculate coefficient of variation (relative volatility)
-                df[f'{col}_volatility'] = (rolling_std / rolling_mean) * 100
-                
-                # Create volatility alerts
-                for idx, row in df.iterrows():
-                    if pd.notnull(row[f'{col}_volatility']) and row[f'{col}_volatility'] > self.unusual_volatility_threshold:
-                        alerts.append({
-                            'date': row['record_date'],
-                            'category': category,
-                            'type': col.replace('current_month_', '').replace('_amt', ''),
-                            'change': row[f'{col}_volatility'],
-                            'period': 'volatility',
-                            'alert_type': 'WARNING',
-                            'message': (
-                                f"⚠️ Unusual volatility detected in {category} spending. "
-                                f"Volatility index: {row[f'{col}_volatility']:.1f}%"
-                            )
-                        })
-        
-        return alerts
-
-    def _create_alert(self, 
-                     row: pd.Series,
-                     category: str, 
-                     col: str, 
-                     pct_change: float,
-                     period: str) -> Dict:
-        """
-        Create an alert dictionary based on funding changes
-        
-        Args:
-            row: DataFrame row containing the data
-            category: Category name
-            col: Column name for the data
-            pct_change: Percentage change value
-            period: Time period for the change (e.g., '1-day', '7-day')
-            
-        Returns:
-            Alert dictionary
-        """
-        alert = {
-            'date': row['record_date'],
-            'category': category,
-            'type': col.replace('current_month_', '').replace('_amt', ''),
-            'change': pct_change,
-            'period': period,
-            'alert_type': None,
-            'message': None
-        }
-        
-        # Adjust thresholds based on the period
-        critical_threshold = self.critical_cut_threshold
-        warning_threshold = -self.significant_change_threshold
-        info_threshold = self.significant_change_threshold
-        
-        if period == '7-day':
-            critical_threshold *= 0.8  # Less severe threshold for 7-day change
-            warning_threshold *= 0.8
-            info_threshold *= 0.8
-        elif period == '30-day':
-            critical_threshold *= 0.5  # Even less severe threshold for 30-day change
-            warning_threshold *= 0.5
-            info_threshold *= 0.5
-        
-        if pct_change <= critical_threshold:
-            alert['alert_type'] = 'RED_ALERT'
-            alert['message'] = (
-                f"🚨 CRITICAL: Severe funding cut detected for {category}. "
-                f"{period} decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change <= warning_threshold:
-            alert['alert_type'] = 'WARNING'
-            alert['message'] = (
-                f"⚠️ Warning: Significant decrease in {category} funding. "
-                f"{period} decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change >= info_threshold:
-            alert['alert_type'] = 'INFO'
-            alert['message'] = (
-                f"ℹ️ Notice: Significant increase in {category} funding. "
-                f"{period} increase of {pct_change:.1f}%"
             )
         
-        return alert
-
-    def generate_recommendations(self, df: pd.DataFrame, alerts: List[Dict]) -> List[str]:
-        """
-        Generate recommendations based on funding alerts and patterns
-        
-        Args:
-            df: DataFrame containing the analyzed data
-            alerts: List of alert dictionaries
-            
-        Returns:
-            List of recommendation strings
-        """
-        recommendations = []
-        category_alerts = {}
-        
-        # Group alerts by category and type
+        # Add alert indicators for significant changes
+        alerts = fetcher.detect_funding_changes(category_data, category)
         for alert in alerts:
-            key = (alert['category'], alert['type'])
-            if key not in category_alerts:
-                category_alerts[key] = []
-            category_alerts[key].append(alert)
-        
-        # Generate recommendations based on patterns
-        for (category, alert_type), cat_alerts in category_alerts.items():
-            red_alerts = sum(1 for a in cat_alerts if a['alert_type'] == 'RED_ALERT')
-            warnings = sum(1 for a in cat_alerts if a['alert_type'] == 'WARNING')
-            volatility_alerts = sum(1 for a in cat_alerts if a['period'] == 'volatility')
-            
-            if red_alerts > 0:
-                recommendations.append(
-                    f"Critical funding changes detected for {category}. "
-                    f"This may indicate significant policy changes or budget reallocations."
+            if alert['alert_type'] == 'RED_ALERT':
+                fig.add_vline(
+                    x=alert['date'],
+                    line_dash="dash",
+                    line_color="red",
+                    opacity=0.3,
+                    annotation_text="Significant Change",
+                    annotation_position="top right"
                 )
-            elif warnings >= 2:
-                recommendations.append(
-                    f"{category} shows a pattern of funding decreases. "
-                    f"Monitor closely for potential impacts on program operations."
-                )
-            
-            if volatility_alerts > 0:
-                recommendations.append(
-                    f"Unusual spending volatility detected in {category}. "
-                    f"This may indicate irregular disbursements or reporting issues."
-                )
-        
-        # Generate trend-based recommendations
-        for category in set(df['classification_desc']):
-            category_data = df[df['classification_desc'] == category]
-            if len(category_data) >= 30:
-                # Calculate trend (simple linear regression)
-                category_data = category_data.sort_values('record_date')
-                x = np.arange(len(category_data))
-                y = category_data['current_month_outly_amt'].values
-                
-                if len(x) > 0 and len(y) > 0:
-                    slope, _ = np.polyfit(x, y, 1)
-                    avg_value = np.mean(y)
-                    
-                    if avg_value > 0:
-                        annual_trend_pct = (slope * 365) / avg_value * 100
-                        
-                        if annual_trend_pct > 20:
-                            recommendations.append(
-                                f"{category} shows a strong upward trend ({annual_trend_pct:.1f}% annual growth rate). "
-                                f"This may indicate expanding program scope or increasing costs."
-                            )
-                        elif annual_trend_pct < -15:
-                            recommendations.append(
-                                f"{category} shows a significant downward trend ({abs(annual_trend_pct):.1f}% annual decline). "
-                                f"This may indicate program cuts or efficiency improvements."
-                            )
-        
-        return recommendations
+    
+    # Customize the figure layout
+    title_text = "Federal Government Outlays by Category" if plot_type == 'outlays' else "Federal Government Receipts by Category"
+    y_axis_title = "Percentage of Total Spending" if normalize_data else "Billions of Dollars"
+    
+    fig.update_layout(
+        title={
+            'text': title_text,
+            'y':0.95,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        xaxis_title='Date',
+        yaxis_title=y_axis_title,
+        legend_title="Categories",
+        height=600,
+        showlegend=True,
+        hovermode='x unified',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="center",
+            x=0.5
+        ),
+        margin=dict(l=60, r=30, t=80, b=100)
+    )
+    
+    # Add range selector for time navigation
+    fig.update_xaxes(
+        rangeslider_visible=True,
+        rangeselector=dict(
+            buttons=list([
+                dict(count=7, label="1w", step="day", stepmode="backward"),
+                dict(count=1, label="1m", step="month", stepmode="backward"),
+                dict(count=3, label="3m", step="month", stepmode="backward"),
+                dict(count=6, label="6m", step="month", stepmode="backward"),
+                dict(count=1, label="YTD", step="year", stepmode="todate"),
+                dict(count=1, label="1y", step="year", stepmode="backward"),
+                dict(step="all")
+            ])
+        )
+    )
+    
+    return fig
 
-    def analyze_treasury_data(self, 
-                            start_date: datetime,
-                            end_date: datetime,
-                            categories: List[str],
-                            frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
-        """
-        Comprehensive analysis of treasury data with alerts and recommendations
+def calculate_summary_metrics(df: pd.DataFrame, categories: List[str], 
+                             analysis_type: str) -> List[Dict]:
+    """Calculate enhanced summary metrics for each category"""
+    metrics = []
+    column = 'current_month_outly_amt' if analysis_type == 'outlays' else 'current_month_gross_rcpt_amt'
+    
+    for category in categories:
+        category_data = df[df['classification_desc'] == category]
+        if not category_data.empty and len(category_data) > 0:
+            # Get the most recent value (in billions)
+            current_value = category_data[column].iloc[0] / 1e9
+            
+            # Calculate percentage change
+            if len(category_data) > 1:
+                prev_value = category_data[column].iloc[1] / 1e9
+                pct_change = ((current_value / prev_value) - 1) * 100 if prev_value != 0 else 0
+            else:
+                pct_change = 0
+            
+            # Calculate additional metrics
+            total_value = category_data[column].sum() / 1e9 if len(category_data) > 0 else 0
+            avg_value = category_data[column].mean() / 1e9 if len(category_data) > 0 else 0
+            
+            metrics.append({
+                'category': category,
+                'current_value': current_value,
+                'change': pct_change,
+                'total': total_value,
+                'average': avg_value
+            })
+    
+    return metrics
+
+def display_spending_alerts(alerts: List[Dict], recommendations: List[str]):
+    """Display enhanced alerts and recommendations for spending changes"""
+    st.subheader("Notable Spending Changes")
+    
+    # Create tabs for different alert levels
+    if alerts:
+        alert_tabs = st.tabs(["🔴 Critical Changes", "⚠️ Significant Changes", "ℹ️ Notable Trends"])
         
-        Args:
-            start_date: Start date for analysis
-            end_date: End date for analysis
-            categories: List of category codes to analyze
-            frequency: Data frequency ('daily', 'weekly', or 'seven_day_ma')
+        with alert_tabs[0]:
+            critical_alerts = [a for a in alerts if a['alert_type'] == 'RED_ALERT']
+            if critical_alerts:
+                for alert in critical_alerts:
+                    st.error(alert['message'])
+            else:
+                st.info("No critical spending changes detected in the selected period.")
+        
+        with alert_tabs[1]:
+            warning_alerts = [a for a in alerts if a['alert_type'] == 'WARNING']
+            if warning_alerts:
+                for alert in warning_alerts:
+                    st.warning(alert['message'])
+            else:
+                st.info("No significant spending changes detected in the selected period.")
+        
+        with alert_tabs[2]:
+            info_alerts = [a for a in alerts if a['alert_type'] == 'INFO']
+            if info_alerts:
+                for alert in info_alerts:
+                    st.info(alert['message'])
+            else:
+                st.info("No notable spending trends detected in the selected period.")
+    else:
+        st.info("No significant spending changes detected for the selected parameters.")
+    
+    # Display recommendations with more structure
+    st.subheader("Analysis & Recommendations")
+    if recommendations:
+        for i, rec in enumerate(recommendations):
+            st.markdown(f"**{i+1}.** {rec}")
+    else:
+        st.info("No specific recommendations for the current spending analysis.")
+    
+    # Add historical context
+    st.subheader("Historical Context")
+    st.markdown("""
+    Spending patterns should be interpreted in the context of:
+    - Budget cycles (fiscal year begins October 1)
+    - Supplemental appropriations
+    - Continuing resolutions
+    - Seasonal program spending patterns
+    
+    Some spending fluctuations are normal and expected based on the government's fiscal calendar.
+    """)
+
+def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_type: str):
+    """Display detailed spending analysis with enhanced metrics"""
+    st.subheader("Detailed Spending Analysis")
+    
+    # Option to select specific category for detailed view
+    selected_category = st.selectbox(
+        "Select category for detailed analysis",
+        options=categories
+    )
+    
+    # Get data for selected category
+    category_data = df[df['classification_desc'] == selected_category]
+    
+    if not category_data.empty:
+        # Create two columns for metrics and chart
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.subheader(f"{selected_category} Metrics")
             
-        Returns:
-            Tuple containing:
-              - DataFrame with analyzed data
-              - List of alert dictionaries
-              - List of recommendation strings
-        """
-        try:
-            # Fetch the data
-            df = self.fetch_treasury_data(start_date, end_date, categories)
+            # Calculate key metrics
+            column = 'current_month_outly_amt' if analysis_type == 'outlays' else 'current_month_gross_rcpt_amt'
+            current = category_data[column].iloc[0] / 1e9
+            avg_30d = category_data[column].head(30).mean() / 1e9 if len(category_data) >= 30 else None
+            avg_90d = category_data[column].mean() / 1e9
+            median = category_data[column].median() / 1e9
+            total = category_data[column].sum() / 1e9
             
-            if df is None or df.empty:
-                return None, [], []
+            # Calculate volatility
+            std = category_data[column].std() / 1e9
+            volatility = (std / avg_90d) * 100 if avg_90d > 0 else 0
             
-            all_alerts = []
+            # Display metrics
+            st.metric("Latest Value", f"${current:.2f}B")
+            if avg_30d is not None:
+                st.metric("30-Day Average", f"${avg_30d:.2f}B")
+            st.metric("Average", f"${avg_90d:.2f}B")
+            st.metric("Median", f"${median:.2f}B")
+            st.metric("Total", f"${total:.2f}B")
+            st.metric("Volatility", f"{volatility:.1f}%")
             
-            # Process data according to requested frequency
-            if frequency == 'seven_day_ma':
-                df = self.calculate_moving_average(df)
-            elif frequency == 'weekly':
-                # Group data by week
-                df['week'] = df['record_date'].dt.to_period('W')
-                weekly_groups = []
-                
-                for category in categories:
-                    category_data = df[df['classification_desc'] == category]
+            # Display information about the category
+            st.subheader("About This Category")
+            st.markdown(f"""
+            This visualization shows spending for **{selected_category}** based on 
+            the U.S. Treasury's Daily Treasury Statements.
+            
+            *Note: Labels have been edited for clarity and consistency over time 
+            and may not exactly match those found on the Daily Treasury Statements.*
+            """)
+        
+        with col2:
+            st.subheader("Detailed Analysis")
+            
+            # Create a detailed chart for this category
+            detailed_fig = go.Figure()
+            
+            # Plot the main data
+            detailed_fig.add_trace(
+                go.Scatter(
+                    x=category_data['record_date'],
+                    y=category_data[column] / 1e9,
+                    name=f"{selected_category}",
+                    mode='lines+markers',
+                    marker=dict(size=8),
+                    line=dict(width=2),
+                )
+            )
+            
+            # Add 7-day moving average
+            ma_data = fetcher.calculate_moving_average(category_data)
+            detailed_fig.add_trace(
+                go.Scatter(
+                    x=ma_data['record_date'],
+                    y=ma_data[f'{column}_ma'] / 1e9,
+                    name="7-day MA",
+                    mode='lines',
+                    line=dict(width=2, dash='dot'),
+                )
+            )
+            
+            # Update layout
+            detailed_fig.update_layout(
+                title=f"{selected_category} Spending Analysis",
+                xaxis_title="Date",
+                yaxis_title="Billions of Dollars",
+                height=500,
+                hovermode='x unified'
+            )
+            
+            st.plotly_chart(detailed_fig, use_container_width=True)
+            
+            # Add a historical comparison
+            st.subheader("Historical Statistics")
+            
+            # Calculate year-over-year change if enough data
+            if len(category_data) > 365:
+                # This is simplified - would need actual YoY calculation
+                st.metric(
+                    "Year-over-Year Change",
+                    f"{(current/avg_90d - 1) * 100:.1f}%"
+                )
+            
+            # Add data table with key stats
+            st.subheader("Daily Spending Data")
+            st.dataframe(
+                category_data[['record_date', column]].rename(
+                    columns={column: 'Amount (USD)'}
+                ).sort_values('record_date', ascending=False).head(10)
+            )
+    else:
+        st.info(f"No data available for {selected_category} in the selected time period.")
+
+if __name__ == "__main__":
+    st.set_page_config(
+        page_title="Federal Spending Tracker",
+        page_icon="🏦",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    display_treasury_dashboard()
