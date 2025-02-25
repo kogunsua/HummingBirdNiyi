@@ -299,7 +299,7 @@ class TreasuryDataFetcher:
         ]
         
         # Build filters
-        def analyze_treasury_data(self, 
+      def analyze_treasury_data(self, 
                         start_date: datetime,
                         end_date: datetime,
                         categories: List[str],
@@ -325,6 +325,68 @@ class TreasuryDataFetcher:
         
         if df is None or df.empty:
             return None, [], []
+        
+        all_alerts = []
+        
+        # Make a copy to avoid modifications to original data
+        df = df.copy()
+        
+        # Process data according to requested frequency
+        if frequency == 'seven_day_ma':
+            df = self.calculate_moving_average(df)
+        elif frequency == 'weekly':
+            # Group data by week using string-based grouping to avoid Period objects
+            df['week'] = df['record_date'].dt.strftime('%Y-%U')
+            weekly_groups = []
+            
+            for category in categories:
+                category_data = df[df['classification_desc'] == category].copy()
+                if not category_data.empty:
+                    # Group by week and calculate weekly sums
+                    weekly_data = category_data.groupby('week').agg({
+                        'current_month_outly_amt': 'sum',
+                        'current_month_gross_rcpt_amt': 'sum'
+                    }).reset_index()
+                    
+                    # Create a proper datetime from the week string (first day of week)
+                    def week_to_date(week_str):
+                        year, week_num = week_str.split('-')
+                        # Create a date object for the first day of the year
+                        first_day = datetime(int(year), 1, 1)
+                        # If the first day is not a Monday, move to the first Monday
+                        if first_day.weekday() != 0:
+                            first_day = first_day + timedelta(days=(7 - first_day.weekday()))
+                        # Add the weeks
+                        return first_day + timedelta(weeks=int(week_num))
+                    
+                    weekly_data['record_date'] = weekly_data['week'].apply(week_to_date)
+                    weekly_data['classification_desc'] = category
+                    weekly_data['internal_category'] = category
+                    
+                    weekly_groups.append(weekly_data)
+            
+            if weekly_groups:
+                df = pd.concat(weekly_groups, ignore_index=True)
+        
+        # Process alerts for each category
+        for category in categories:
+            category_data = df[df['classification_desc'] == category]
+            
+            if not category_data.empty:
+                # Detect funding changes
+                alerts = self.detect_funding_changes(category_data, category)
+                all_alerts.extend(alerts)
+        
+        # Generate recommendations
+        recommendations = self.generate_recommendations(df, all_alerts)
+        
+        return df, all_alerts, recommendations
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Analysis error: {e}")
+        return None, [], []
         
         all_alerts = []
         
