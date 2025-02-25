@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
@@ -7,25 +6,8 @@ from typing import Optional, Tuple, Dict
 import pandas as pd
 import traceback
 import yfinance as yf
-
-# Import local modules
-from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
-from config import Config, MODEL_DESCRIPTIONS
-from data_fetchers import AssetDataFetcher, EconomicIndicators
-from forecasting import (
-    prophet_forecast,
-    create_forecast_plot,
-    display_metrics,
-    display_confidence_analysis,
-    add_technical_indicators
-)
-from sentiment_analyzer import (
-    MultiSourceSentimentAnalyzer,
-    display_sentiment_impact_analysis,
-    display_sentiment_impact_results,
-    get_sentiment_data
-)
-from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+import os
+import importlib.util
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +19,94 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Import local modules
+from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
+from config import Config, MODEL_DESCRIPTIONS
+from data_fetchers import AssetDataFetcher, EconomicIndicators
+
+# Import forecasting module functions directly
+from forecasting import (
+    add_technical_indicators,
+    prophet_forecast,
+    create_forecast_plot,
+    display_metrics,
+    display_economic_indicators as display_economic_indicator_details,
+    display_common_metrics,
+    display_confidence_analysis
+)
+
+# Try to import from sentiment_analyzer
+try:
+    from sentiment_analyzer import (
+        MultiSourceSentimentAnalyzer,
+        get_sentiment_data
+    )
+except ImportError:
+    logger.warning("Could not import from sentiment_analyzer, some functionality may be limited")
+    # Create placeholder functions if needed
+    def get_sentiment_data(*args, **kwargs):
+        st.warning("Sentiment analysis functionality is not available")
+        return None
+    
+    class MultiSourceSentimentAnalyzer:
+        def __init__(self):
+            pass
+
+# Try to import from gdelt_analysis
+try:
+    from gdelt_analysis import GDELTAnalyzer, update_forecasting_process
+except ImportError:
+    logger.warning("Could not import from gdelt_analysis, some functionality may be limited")
+    # Create placeholder functions
+    class GDELTAnalyzer:
+        def __init__(self):
+            pass
+        
+        def fetch_sentiment_data(self, *args, **kwargs):
+            return None
+    
+    def update_forecasting_process(*args, **kwargs):
+        return None, {}
+
+# Import Treasury modules
+from treasury_interface import display_treasury_dashboard
+
+# Try to import from forecast_display if it exists
+try:
+    from forecast_display import (
+        display_forecast_results,
+        display_sentiment_impact_analysis,
+        display_sentiment_impact_results
+    )
+except ImportError:
+    logger.warning("Could not import from forecast_display, using built-in functions")
+    
+    # Define placeholder functions that use the imported forecasting functions
+    def display_forecast_results(price_data, forecast, impact_metrics, forecast_type, asset_type, symbol):
+        """Display forecast results using built-in functions"""
+        try:
+            # Create and display plot
+            fig = create_forecast_plot(price_data, forecast, "Prophet", symbol, asset_type)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display metrics
+            display_metrics(price_data, forecast, asset_type, symbol)
+            
+        except Exception as e:
+            logger.error(f"Error displaying forecast results: {str(e)}")
+            st.error(f"Error displaying forecast results: {str(e)}")
+    
+    def display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source):
+        """Placeholder for sentiment impact analysis display"""
+        st.subheader("🔍 Sentiment Analysis Configuration")
+        st.info(f"Analyzing sentiment data from {sentiment_source} for the past {sentiment_period} days with a weight of {sentiment_weight:.2f}")
+    
+    def display_sentiment_impact_results(sentiment_data, impact_metrics):
+        """Placeholder for sentiment impact results display"""
+        if sentiment_data is not None:
+            st.subheader("📊 Sentiment Impact Analysis")
+            st.info("Sentiment analysis has been incorporated into the forecast")
 
 def display_header():
     """Display the application header with styling"""
@@ -56,7 +126,7 @@ def display_footer():
         </div>
     """, unsafe_allow_html=True)
 
-def setup_sidebar() -> Tuple[str, str, Optional[str]]:
+def setup_sidebar() -> Tuple[str, str]:
     """Setup and handle sidebar inputs"""
     with st.sidebar:
         st.header("🔮 Model Configuration")
@@ -130,21 +200,6 @@ def get_user_inputs() -> Tuple[str, str, int]:
     
     return asset_type, symbol, periods
 
-def get_dividend_inputs() -> list:
-    """Get user inputs for dividend analysis"""
-    st.markdown("### 💰 Monthly Dividend Stock Analysis")
-    
-    # Allow users to input custom tickers
-    custom_tickers = st.text_input(
-        "Enter Stock Symbol",
-        "MAIN",
-        help="Enter stock symbol (e.g.MAIN)"
-    )
-    
-    # Convert input string to list and clean up
-    tickers = [ticker.strip().upper() for ticker in custom_tickers.split(',')]
-    return tickers
-
 def get_sentiment_settings() -> Tuple[int, float, str]:
     """Get user settings for sentiment analysis"""
     col1, col2, col3 = st.columns(3)
@@ -177,19 +232,57 @@ def process_forecast(
     sentiment_data: Optional[pd.DataFrame],
     forecast_type: str,
     periods: int,
-    sentiment_weight: float = 0.5
+    sentiment_weight: float = 0.5,
+    economic_data: Optional[pd.DataFrame] = None,
+    economic_indicator: Optional[str] = None,
+    asset_type: str = 'stocks'
 ) -> Tuple[Optional[pd.DataFrame], Dict]:
     """Process forecast data with or without sentiment analysis"""
     try:
         if forecast_type == "Price Only":
-            forecast, error = prophet_forecast(price_data, periods)
-            impact_metrics = {}
-        else:
-            forecast, impact_metrics = update_forecasting_process(
+            # Use the imported prophet_forecast function
+            forecast, error = prophet_forecast(
                 price_data, 
-                sentiment_data,
-                sentiment_weight
+                periods, 
+                economic_data=economic_data,
+                indicator=economic_indicator,
+                asset_type=asset_type.lower()
             )
+            
+            if error:
+                st.error(f"Forecast error: {error}")
+                return None, {}
+                
+            impact_metrics = {"error": error}
+            
+        else:
+            # Use sentiment-enhanced forecasting if available
+            try:
+                forecast, impact_metrics = update_forecasting_process(
+                    price_data, 
+                    sentiment_data,
+                    sentiment_weight,
+                    economic_data=economic_data,
+                    indicator=economic_indicator
+                )
+            except Exception as e:
+                logger.error(f"Sentiment forecasting failed, falling back to basic forecast: {str(e)}")
+                st.warning("Sentiment analysis integration failed. Falling back to basic forecast.")
+                
+                # Fallback to basic forecast
+                forecast, error = prophet_forecast(
+                    price_data, 
+                    periods,
+                    economic_data=economic_data,
+                    indicator=economic_indicator,
+                    asset_type=asset_type.lower()
+                )
+                
+                if error:
+                    st.error(f"Forecast error: {error}")
+                    return None, {}
+                    
+                impact_metrics = {"error": error}
         
         return forecast, impact_metrics
     
@@ -198,56 +291,17 @@ def process_forecast(
         st.error("Failed to process forecast. Please try different parameters.")
         return None, {}
 
-def display_forecast_results(
-    price_data: pd.DataFrame,
-    forecast: pd.DataFrame,
-    impact_metrics: Dict,
-    forecast_type: str,
-    asset_type: str,
-    symbol: str
-):
-    """Display forecast results and visualizations"""
-    try:
-        # Display metrics section
-        st.markdown("### 📊 Market Metrics & Analysis")
-        display_metrics(price_data, forecast, asset_type, symbol)
-        
-        # Display sentiment impact results if available
-        if impact_metrics and forecast_type == "Price + Market Sentiment":
-            display_sentiment_impact_results(impact_metrics)
-        
-        # Display forecast plot
-        st.markdown("### 📈 Forecast Visualization")
-        fig = create_forecast_plot(
-            price_data, 
-            forecast,
-            "Enhanced Prophet" if forecast_type == "Price + Market Sentiment" else "Prophet",
-            symbol
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Display confidence analysis
-        display_confidence_analysis(forecast)
-        
-        # Display detailed forecast data
-        with st.expander("🔍 View Detailed Forecast Data"):
-            st.dataframe(
-                forecast.style.highlight_max(['yhat'], color='lightgreen')
-                .highlight_min(['yhat'], color='lightpink')
-            )
-            
-            # Add download button for forecast data
-            csv = forecast.to_csv(index=False)
-            st.download_button(
-                label="Download Forecast Data",
-                data=csv,
-                file_name=f"{symbol}_forecast.csv",
-                mime="text/csv",
-            )
+def display_economic_indicators_ui(economic_data, selected_indicator, economic_indicators):
+    """Display economic indicators data"""
+    st.markdown("### 📉 Economic Indicators")
+    st.write(f"Selected indicator: {Config.INDICATORS.get(selected_indicator, selected_indicator)}")
     
-    except Exception as e:
-        logger.error(f"Error displaying forecast results: {str(e)}")
-        st.error("Failed to display forecast results.")
+    # Create visualization for the economic indicator
+    fig = economic_indicators.create_indicator_plot(economic_data, selected_indicator)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Use the imported display function for detailed analysis
+    display_economic_indicator_details(economic_data, selected_indicator, economic_indicators)
 
 def main():
     try:
@@ -258,14 +312,18 @@ def main():
             layout="wide"
         )
 
-        #Create Config instance at the start - ADD  THIS LINE
+        # Create Config instance at the start
         config = Config()
         
         # Display header
         display_header()
         
         # Create tabs for different analyses
-        forecast_tab, dividend_tab = st.tabs(["📈 Price Forecast", "💰 Dividend Analysis"])
+        forecast_tab, dividend_tab, treasury_tab = st.tabs([
+            "📈 Price Forecast", 
+            "💰 Dividend Analysis",
+            "🏦 Treasury Analysis"
+        ])
         
         with forecast_tab:
             # Get sidebar inputs
@@ -302,11 +360,12 @@ def main():
                         )
                         
                         # Get economic indicator data if selected
+                        economic_data = None
                         if selected_indicator != 'None':
                             economic_indicators = EconomicIndicators()
                             economic_data = economic_indicators.get_indicator_data(selected_indicator)
                             if economic_data is not None:
-                                display_economic_indicators(economic_data, selected_indicator, economic_indicators)
+                                display_economic_indicators_ui(economic_data, selected_indicator, economic_indicators)
                         
                         # Get sentiment data if selected
                         if forecast_type == "Price + Market Sentiment":
@@ -331,6 +390,10 @@ def main():
                             if selected_model != "Prophet":
                                 st.warning(f"{selected_model} model is currently under development. Using Prophet for forecasting instead.")
                             
+                            # Add technical indicators
+                            with st.spinner('Applying technical indicators...'):
+                                price_data = add_technical_indicators(price_data, asset_type.lower())
+                            
                             # Process forecast
                             with st.spinner('Generating forecast...'):
                                 forecast, impact_metrics = process_forecast(
@@ -338,14 +401,14 @@ def main():
                                     sentiment_data,
                                     forecast_type,
                                     periods,
-                                    sentiment_weight if forecast_type == "Price + Market Sentiment" else 0.5
+                                    sentiment_weight if forecast_type == "Price + Market Sentiment" else 0.5,
+                                    economic_data,
+                                    selected_indicator,
+                                    asset_type
                                 )
                                 
                                 if forecast is not None:
                                     st.success("Forecast generated successfully!")
-                                    
-                                    # Add technical indicators
-                                    price_data = add_technical_indicators(price_data, asset_type)
                                     
                                     # Display results
                                     display_forecast_results(
@@ -353,9 +416,13 @@ def main():
                                         forecast,
                                         impact_metrics,
                                         forecast_type,
-                                        asset_type,
+                                        asset_type.lower(),
                                         symbol
                                     )
+                                    
+                                    # Display sentiment impact if available
+                                    if forecast_type == "Price + Market Sentiment" and sentiment_data is not None:
+                                        display_sentiment_impact_results(sentiment_data, impact_metrics)
                                 else:
                                     st.error("Failed to generate forecast. Please try different parameters.")
                         else:
@@ -383,7 +450,7 @@ def main():
             # Analyze button
             if st.button("🔍 Analyze Dividends"):
                 try:
-                    # Initialize DividendAnalyzer with Config - MODIFY THESE LINES
+                    # Initialize DividendAnalyzer with Config
                     analyzer = DividendAnalyzer()
                     analyzer.config = config  # Add this line
                     tickers = [t.strip().upper() for t in custom_tickers.split(',')]
@@ -392,6 +459,11 @@ def main():
                     logger.error(f"Dividend analysis error: {str(e)}")
                     st.error("An error occurred during dividend analysis. Please try again.")
                     st.exception(e)
+        
+        # Add Treasury Analysis Tab
+        with treasury_tab:
+            # Call the imported treasury dashboard function directly
+            display_treasury_dashboard()
 
     except Exception as e:
         logger.error(f"Application error: {str(e)}\n{traceback.format_exc()}")

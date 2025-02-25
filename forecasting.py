@@ -677,3 +677,4 @@ def display_economic_indicators(data: pd.DataFrame, indicator: str, economic_ind
         logger.error(f"Error displaying economic indicators: {str(e)}")
         st.error(f"Error displaying economic indicators: {str(e)}")
         
+        
