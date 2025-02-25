@@ -350,7 +350,8 @@ class TreasuryDataFetcher:
                     }).reset_index()
                     
                     # Create a proper datetime from the week string (first day of week)
-                    def week_to_date(week_str):
+
+    def week_to_date(week_str):
                         year, week_num = week_str.split('-')
                         # Create a date object for the first day of the year
                         first_day = datetime(int(year), 1, 1)
