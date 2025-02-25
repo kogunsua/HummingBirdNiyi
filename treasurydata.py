@@ -299,10 +299,79 @@ class TreasuryDataFetcher:
         ]
         
         # Build filters
-        date_filter = [
-            f"record_date:gte:{start_date_str}",
-            f"record_date:lte:{end_date_str}"
-        ]
+        def analyze_treasury_data(self, 
+                        start_date: datetime,
+                        end_date: datetime,
+                        categories: List[str],
+                        frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
+    """
+    Comprehensive analysis of treasury data with alerts and recommendations
+    
+    Args:
+        start_date: Start date for analysis
+        end_date: End date for analysis
+        categories: List of category codes to analyze
+        frequency: Data frequency ('daily', 'weekly', or 'seven_day_ma')
+        
+    Returns:
+        Tuple containing:
+          - DataFrame with analyzed data
+          - List of alert dictionaries
+          - List of recommendation strings
+    """
+    try:
+        # Fetch the data
+        df = self.fetch_treasury_data(start_date, end_date, categories)
+        
+        if df is None or df.empty:
+            return None, [], []
+        
+        all_alerts = []
+        
+        # Process data according to requested frequency
+        if frequency == 'seven_day_ma':
+            df = self.calculate_moving_average(df)
+        elif frequency == 'weekly':
+            # Group data by week
+            df['week'] = df['record_date'].dt.to_period('W')
+            weekly_groups = []
+            
+            for category in categories:
+                category_data = df[df['classification_desc'] == category]
+                if not category_data.empty:
+                    # Group by week and calculate weekly sums
+                    weekly_data = category_data.groupby('week').agg({
+                        'current_month_outly_amt': 'sum',
+                        'current_month_gross_rcpt_amt': 'sum'
+                    }).reset_index()
+                    
+                    # Fix: Convert period to datetime correctly
+                    weekly_data['record_date'] = weekly_data['week'].apply(lambda x: x.start_time)
+                    weekly_data['classification_desc'] = category
+                    weekly_data['internal_category'] = category
+                    
+                    weekly_groups.append(weekly_data)
+            
+            if weekly_groups:
+                df = pd.concat(weekly_groups, ignore_index=True)
+        
+        # Process alerts for each category
+        for category in categories:
+            category_data = df[df['classification_desc'] == category]
+            
+            if not category_data.empty:
+                # Detect funding changes
+                alerts = self.detect_funding_changes(category_data, category)
+                all_alerts.extend(alerts)
+        
+        # Generate recommendations
+        recommendations = self.generate_recommendations(df, all_alerts)
+        
+        return df, all_alerts, recommendations
+        
+    except Exception as e:
+        print(f"Analysis error: {e}")
+        return None, [], []
         
         # Initialize list to store DataFrames from different sources
         data_frames = []
