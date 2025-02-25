@@ -299,6 +299,7 @@ class TreasuryDataFetcher:
         ]
         
         # Build filters
+        
     def analyze_treasury_data(self, 
                         start_date: datetime,
                         end_date: datetime,
@@ -387,7 +388,6 @@ class TreasuryDataFetcher:
         traceback.print_exc()
         print(f"Analysis error: {e}")
         return None, [], []
-        
         all_alerts = []
         
         # Process data according to requested frequency
