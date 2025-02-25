@@ -141,6 +141,10 @@ def display_treasury_dashboard():
                 # Convert UI selections to API parameters
                 freq_param = frequency_map[frequency]
                 
+                # Show a more informative loading message
+                loading_message = st.empty()
+                loading_message.info("Fetching latest Treasury data. This might take a moment...")
+                
                 # Get treasury data
                 df, alerts, recommendations = fetcher.analyze_treasury_data(
                     start_date=datetime.combine(start_date, datetime.min.time()),
@@ -148,6 +152,9 @@ def display_treasury_dashboard():
                     categories=categories,
                     frequency=freq_param
                 )
+                
+                # Clear the loading message
+                loading_message.empty()
                 
                 if df is not None and not df.empty:
                     # Create tabs for different views
@@ -182,7 +189,38 @@ def display_treasury_dashboard():
                     - There may be a delay in updating the Treasury data
                     
                     Try selecting a different time period or different categories.
+                    
+                    Note: For demonstration purposes, the application can generate sample data.
+                    To view sample data, click "Generate Sample Data" below.
                     """)
+                    
+                    # Add button to generate sample data
+                    if st.button("Generate Sample Data"):
+                        with st.spinner("Generating sample data..."):
+                            sample_df = fetcher.get_sample_data(categories)
+                            if sample_df is not None and not sample_df.empty:
+                                st.success("Sample data generated successfully!")
+                                # Create tabs for different views
+                                visualization_tab, details_tab = st.tabs([
+                                    "📊 Sample Visualization",
+                                    "📋 Sample Data Details"
+                                ])
+                                
+                                with visualization_tab:
+                                    display_spending_visualization(
+                                        sample_df, 
+                                        fetcher, 
+                                        categories, 
+                                        freq_param, 
+                                        "outlays",
+                                        show_trend_lines,
+                                        normalize_data
+                                    )
+                                
+                                with details_tab:
+                                    display_detailed_analysis(sample_df, categories, "outlays")
+                            else:
+                                st.error("Failed to generate sample data.")
             except Exception as e:
                 st.error(f"Error retrieving spending data: {str(e)}")
                 st.info("""
@@ -191,17 +229,37 @@ def display_treasury_dashboard():
                 - Try a smaller time period
                 - Try different categories
                 - The Treasury API might be temporarily unavailable
+                
+                For demonstration purposes, try using the sample data functionality.
                 """)
-            
-            except Exception as e:
-                st.error(f"Error retrieving spending data: {str(e)}")
-                st.info("""
-                Troubleshooting tips:
-                - Check your internet connection
-                - Try a smaller time period
-                - Try different categories
-                - The Treasury API might be temporarily unavailable
-                """)
+                
+                # Add button to generate sample data
+                if st.button("Generate Sample Data"):
+                    with st.spinner("Generating sample data..."):
+                        sample_df = fetcher.get_sample_data(categories)
+                        if sample_df is not None and not sample_df.empty:
+                            st.success("Sample data generated successfully!")
+                            # Create tabs for different views
+                            visualization_tab, details_tab = st.tabs([
+                                "📊 Sample Visualization",
+                                "📋 Sample Data Details"
+                            ])
+                            
+                            with visualization_tab:
+                                display_spending_visualization(
+                                    sample_df, 
+                                    fetcher, 
+                                    categories, 
+                                    freq_param, 
+                                    "outlays",
+                                    show_trend_lines,
+                                    normalize_data
+                                )
+                            
+                            with details_tab:
+                                display_detailed_analysis(sample_df, categories, "outlays")
+                        else:
+                            st.error("Failed to generate sample data.")
 
 def display_spending_visualization(
     df: pd.DataFrame, 
@@ -310,12 +368,20 @@ def create_spending_plot(
             
         # Create the appropriate data series based on frequency
         if frequency == 'seven_day_ma':
-            category_data = fetcher.calculate_moving_average(category_data)
             x_values = category_data['record_date']
-            y_values = category_data[f'{amount_column}_ma'] / 1e9  # Convert to billions
+            ma_column = f"{amount_column}_ma"
+            if ma_column in category_data.columns:
+                y_values = category_data[ma_column] / 1e9  # Convert to billions
+            else:
+                # If MA column doesn't exist, calculate it here
+                category_data = fetcher.calculate_moving_average(category_data)
+                y_values = category_data[f"{amount_column}_ma"] / 1e9  # Convert to billions
             label = f"{category} (7-day MA)"
         elif frequency == 'weekly':
-            category_data['week'] = category_data['record_date'].dt.to_period('W')
+            # If week column doesn't exist, add it
+            if 'week' not in category_data.columns:
+                category_data['week'] = category_data['record_date'].dt.to_period('W')
+            
             weekly_data = category_data.groupby('week')[amount_column].sum() / 1e9
             x_values = [pd.Period(x).to_timestamp() for x in weekly_data.index]
             y_values = weekly_data.values
@@ -586,17 +652,25 @@ def display_detailed_analysis(df: pd.DataFrame, categories: List[str], analysis_
                 )
             )
             
-            # Add 7-day moving average
-            ma_data = fetcher.calculate_moving_average(category_data)
-            detailed_fig.add_trace(
-                go.Scatter(
-                    x=ma_data['record_date'],
-                    y=ma_data[f'{column}_ma'] / 1e9,
-                    name="7-day MA",
-                    mode='lines',
-                    line=dict(width=2, dash='dot'),
+            # Add 7-day moving average if there's enough data
+            if len(category_data) >= 7:
+                ma_data = category_data.copy()
+                ma_column = f"{column}_ma"
+                
+                # Check if we already have a moving average column
+                if ma_column not in ma_data.columns:
+                    # Calculate moving average
+                    ma_data = TreasuryDataFetcher().calculate_moving_average(ma_data)
+                
+                detailed_fig.add_trace(
+                    go.Scatter(
+                        x=ma_data['record_date'],
+                        y=ma_data[ma_column] / 1e9,
+                        name="7-day MA",
+                        mode='lines',
+                        line=dict(width=2, dash='dot'),
+                    )
                 )
-            )
             
             # Update layout
             detailed_fig.update_layout(
