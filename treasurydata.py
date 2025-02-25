@@ -299,7 +299,7 @@ class TreasuryDataFetcher:
         ]
         
         # Build filters
-     def analyze_treasury_data(self, 
+    def analyze_treasury_data(self, 
                         start_date: datetime,
                         end_date: datetime,
                         categories: List[str],
