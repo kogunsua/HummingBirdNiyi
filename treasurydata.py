@@ -108,8 +108,8 @@ class TreasuryDataFetcher:
         
         # Dictionary to match Treasury API categories to our simplified categories
         self.api_category_mapping = self._initialize_category_mapping()
-
-def _initialize_category_mapping(self) -> Dict:
+    
+    def _initialize_category_mapping(self) -> Dict:
         """
         Initialize mapping between Treasury API category names and our simplified categories
         This helps normalize different naming conventions across different Treasury data sources
@@ -267,8 +267,8 @@ def _initialize_category_mapping(self) -> Dict:
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data: {e}")
             raise
-            
-            def fetch_treasury_data(self, 
+        
+    def fetch_treasury_data(self, 
                            start_date: datetime,
                            end_date: datetime,
                            categories: List[str]) -> pd.DataFrame:
@@ -403,8 +403,8 @@ def _initialize_category_mapping(self) -> Dict:
             return api_category_upper
         
         return 'OTHER'
-        
-        def _generate_sample_data(self, 
+    
+    def _generate_sample_data(self, 
                             start_date: datetime,
                             end_date: datetime,
                             categories: List[str]) -> pd.DataFrame:
@@ -555,8 +555,8 @@ def _initialize_category_mapping(self) -> Dict:
                 df[f'{col}_ma'] = df[col].rolling(window=days, min_periods=1).mean()
         
         return df
-        
-        def detect_funding_changes(self, df: pd.DataFrame, category: str) -> List[Dict]:
+
+    def detect_funding_changes(self, df: pd.DataFrame, category: str) -> List[Dict]:
         """
         Detect significant changes in funding and generate alerts
         
@@ -672,246 +672,4 @@ def _initialize_category_mapping(self) -> Dict:
         info_threshold = self.significant_change_threshold
         
         if period == '7-day':
-            critical_threshold *= 0.8  # Less severe threshold for 7-day change
-            warning_threshold *= 0.8
-            info_threshold *= 0.8
-        elif period == '30-day':
-            critical_threshold *= 0.5  # Even less severe threshold for 30-day change
-            warning_threshold *= 0.5
-            info_threshold *= 0.5
-        
-        if pct_change <= critical_threshold:
-            alert['alert_type'] = 'RED_ALERT'
-            alert['message'] = (
-                f"🚨 CRITICAL: Severe funding cut detected for {category}. "
-                f"{period} decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change <= warning_threshold:
-            alert['alert_type'] = 'WARNING'
-            alert['message'] = (
-                f"⚠️ Warning: Significant decrease in {category} funding. "
-                f"{period} decrease of {abs(pct_change):.1f}%"
-            )
-        elif pct_change >= info_threshold:
-            alert['alert_type'] = 'INFO'
-            alert['message'] = (
-                f"ℹ️ Notice: Significant increase in {category} funding. "
-                f"{period} increase of {pct_change:.1f}%"
-            )
-        
-        return alert
-        
-        def generate_recommendations(self, df: pd.DataFrame, alerts: List[Dict]) -> List[str]:
-        """
-        Generate recommendations based on funding alerts and patterns
-        
-        Args:
-            df: DataFrame containing the analyzed data
-            alerts: List of alert dictionaries
-            
-        Returns:
-            List of recommendation strings
-        """
-        recommendations = []
-        category_alerts = {}
-        
-        # Group alerts by category and type
-        for alert in alerts:
-            key = (alert['category'], alert['type'])
-            if key not in category_alerts:
-                category_alerts[key] = []
-            category_alerts[key].append(alert)
-        
-        # Generate recommendations based on patterns
-        for (category, alert_type), cat_alerts in category_alerts.items():
-            red_alerts = sum(1 for a in cat_alerts if a['alert_type'] == 'RED_ALERT')
-            warnings = sum(1 for a in cat_alerts if a['alert_type'] == 'WARNING')
-            volatility_alerts = sum(1 for a in cat_alerts if a['period'] == 'volatility')
-            
-            if red_alerts > 0:
-                recommendations.append(
-                    f"Critical funding changes detected for {category}. "
-                    f"This may indicate significant policy changes or budget reallocations."
-                )
-            elif warnings >= 2:
-                recommendations.append(
-                    f"{category} shows a pattern of funding decreases. "
-                    f"Monitor closely for potential impacts on program operations."
-                )
-            
-            if volatility_alerts > 0:
-                recommendations.append(
-                    f"Unusual spending volatility detected in {category}. "
-                    f"This may indicate irregular disbursements or reporting issues."
-                )
-        
-        # Generate trend-based recommendations
-        for category in set(df['classification_desc']):
-            category_data = df[df['classification_desc'] == category]
-            if len(category_data) >= 30:
-                # Calculate trend (simple linear regression)
-                category_data = category_data.sort_values('record_date')
-                x = np.arange(len(category_data))
-                y = category_data['current_month_outly_amt'].values
-                
-                if len(x) > 0 and len(y) > 0:
-                    slope, _ = np.polyfit(x, y, 1)
-                    avg_value = np.mean(y)
-                    
-                    if avg_value > 0:
-                        annual_trend_pct = (slope * 365) / avg_value * 100
-                        
-                        if annual_trend_pct > 20:
-                            recommendations.append(
-                                f"{category} shows a strong upward trend ({annual_trend_pct:.1f}% annual growth rate). "
-                                f"This may indicate expanding program scope or increasing costs."
-                            )
-                        elif annual_trend_pct < -15:
-                            recommendations.append(
-                                f"{category} shows a significant downward trend ({abs(annual_trend_pct):.1f}% annual decline). "
-                                f"This may indicate program cuts or efficiency improvements."
-                            )
-        
-        return recommendations
-
-    def analyze_treasury_data(self, 
-                            start_date: datetime,
-                            end_date: datetime,
-                            categories: List[str],
-                            frequency: str = 'daily') -> Tuple[pd.DataFrame, List[Dict], List[str]]:
-        """
-        Comprehensive analysis of treasury data with alerts and recommendations
-        
-        Args:
-            start_date: Start date for analysis
-            end_date: End date for analysis
-            categories: List of category codes to analyze
-            frequency: Data frequency ('daily', 'weekly', or 'seven_day_ma')
-            
-        Returns:
-            Tuple containing:
-              - DataFrame with analyzed data
-              - List of alert dictionaries
-              - List of recommendation strings
-        """
-        try:
-            # Fetch the data
-            df = self.fetch_treasury_data(start_date, end_date, categories)
-            
-            if df is None or df.empty:
-                return None, [], []
-            
-            all_alerts = []
-            
-            # Process data according to requested frequency
-            if frequency == 'seven_day_ma':
-                df = self.calculate_moving_average(df)
-            elif frequency == 'weekly':
-                # Group data by week
-                df['week'] = df['record_date'].dt.to_period('W')
-                weekly_groups = []
-                
-                for category in categories:
-                    category_data = df[df['classification_desc'] == category]
-                    if not category_data.empty:
-                        # Group by week and calculate weekly sums
-                        weekly_data = category_data.groupby('week').agg({
-                            'current_month_outly_amt': 'sum',
-                            'current_month_gross_rcpt_amt': 'sum'
-                        }).reset_index()
-                        
-                        # Convert period to datetime using start of period
-                        weekly_data['record_date'] = weekly_data['week'].dt.to_timestamp()
-                        weekly_data['classification_desc'] = category
-                        weekly_data['internal_category'] = category
-                        
-                        weekly_groups.append(weekly_data)
-                
-                if weekly_groups:
-                    df = pd.concat(weekly_groups, ignore_index=True)
-            
-            # Process alerts for each category
-            for category in categories:
-                category_data = df[df['classification_desc'] == category]
-                
-                if not category_data.empty:
-                    # Detect funding changes
-                    alerts = self.detect_funding_changes(category_data, category)
-                    all_alerts.extend(alerts)
-            
-            # Generate recommendations
-            recommendations = self.generate_recommendations(df, all_alerts)
-            
-            return df, all_alerts, recommendations
-            
-        except Exception as e:
-            print(f"Analysis error: {e}")
-            return None, [], []
-
-    def get_available_dates(self) -> List[str]:
-        """Return list of dates known to have data"""
-        # Fetch the most recent available dates from the API
-        try:
-            fields = ['record_date']
-            url = self.build_url(
-                endpoint=self.dts_endpoint,
-                fields=fields,
-                page_size=100
-            )
-            
-            df = self.fetch_data(url)
-            if not df.empty and 'record_date' in df.columns:
-                return df['record_date'].dt.strftime('%Y-%m-%d').tolist()
-            
-            # Fallback to hardcoded dates
-            return [
-                datetime.now().strftime('%Y-%m-%d'),
-                (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
-                (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-            ]
-        except:
-            # Return recent dates as fallback
-            return [
-                datetime.now().strftime('%Y-%m-%d'),
-                (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d'),
-                (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
-            ]
-
-
-def main():
-    """
-    Main function to demonstrate the usage of TreasuryDataFetcher
-    """
-    fetcher = TreasuryDataFetcher()
-    
-    # Example analysis
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=90)
-    categories = ['SNAP', 'NIH', 'VA']
-    
-    try:
-        df, alerts, recommendations = fetcher.analyze_treasury_data(
-            start_date,
-            end_date,
-            categories
-        )
-        
-        if df is not None:
-            print("\nAnalysis Results:")
-            print("-" * 50)
-            print(f"Total records: {len(df)}")
-            print(f"Date range: {df['record_date'].min()} to {df['record_date'].max()}")
-            
-            print("\nAlerts:")
-            for alert in alerts:
-                print(f"- {alert['message']}")
-            
-            print("\nRecommendations:")
-            for rec in recommendations:
-                print(f"- {rec}")
-    
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-if __name__ == "__main__":
-    main()
+            critical_threshol
