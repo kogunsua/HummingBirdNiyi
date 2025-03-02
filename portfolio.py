@@ -568,3 +568,117 @@ def get_portfolio_performance_history(portfolio_data, start_date, end_date):
     portfolio_value['Drawdown'] = (portfolio_value['Value'] - portfolio_value['Peak']) / portfolio_value['Peak']
     
     return portfolio_value
+
+def generate_portfolio_overview(portfolio_data):
+    """
+    Generate a comprehensive overview of the portfolio
+    
+    Parameters:
+    - portfolio_data (pandas.DataFrame): Portfolio data
+    
+    Returns:
+    - dict: Comprehensive portfolio overview
+    """
+    # Calculate portfolio metrics
+    metrics = calculate_portfolio_metrics(portfolio_data)
+    
+    # Generate income projection
+    income_projection = get_income_projection(portfolio_data)
+    
+    # Analyze portfolio risk
+    risk_analysis = analyze_portfolio_risk(portfolio_data)
+    
+    # Prepare comprehensive overview
+    overview = {
+        'total_portfolio': {
+            'total_value': metrics['total_value'],
+            'annual_income': metrics['annual_income'],
+            'monthly_income': metrics['monthly_income'],
+            'average_dividend_yield': metrics['avg_yield']
+        },
+        'allocation': {
+            'sector_exposure': dict(metrics['sector_exposure']),
+            'stock_concentration': risk_analysis['concentration_risk']['stock_concentration']
+        },
+        'income_projection': {
+            'monthly_projection': income_projection.to_dict('records'),
+            'total_projected_annual_income': income_projection['Income'].sum(),
+            'average_monthly_income': income_projection['Income'].mean()
+        },
+        'holdings': {
+            'total_stocks': risk_analysis['total_stocks'],
+            'largest_holding': metrics['largest_holding'],
+            'smallest_holding': metrics['smallest_holding']
+        },
+        'risk_metrics': {
+            'dividend_risk': risk_analysis.get('dividend_risk', {}),
+            'volatility_analysis': risk_analysis.get('volatility_analysis', {})
+        }
+    }
+    
+    return overview
+
+def detailed_portfolio_allocation(portfolio_data):
+    """
+    Provide a detailed breakdown of portfolio allocation
+    
+    Parameters:
+    - portfolio_data (pandas.DataFrame): Portfolio data
+    
+    Returns:
+    - dict: Detailed allocation breakdown
+    """
+    # Calculate total portfolio value
+    total_value = portfolio_data['Current Value'].sum()
+    
+    # Sector allocation
+    sector_allocation = portfolio_data.groupby(
+        portfolio_data['Description'].apply(lambda x: x.split()[0])
+    )['Current Value'].agg(['sum', 'count'])
+    
+    sector_allocation['percentage'] = sector_allocation['sum'] / total_value * 100
+    
+    # Detailed allocation dictionary
+    allocation_breakdown = {
+        'total_value': total_value,
+        'sectors': sector_allocation.to_dict(orient='index'),
+        'individual_stocks': portfolio_data.set_index('Symbol')[['Description', 'Current Value', 'Percent Of Account', 'Dist. Yield']].to_dict(orient='index')
+    }
+    
+    return allocation_breakdown
+
+def visualize_portfolio_allocation(portfolio_data):
+    """
+    Create a visualization-friendly allocation data
+    
+    Parameters:
+    - portfolio_data (pandas.DataFrame): Portfolio data
+    
+    Returns:
+    - tuple: Allocation data for charting
+    """
+    # Sector allocation
+    sector_allocation = portfolio_data.groupby(
+        portfolio_data['Description'].apply(lambda x: x.split()[0])
+    )['Current Value'].sum()
+    
+    # Prepare data for pie chart
+    allocation_labels = sector_allocation.index.tolist()
+    allocation_values = sector_allocation.values.tolist()
+    
+    return allocation_labels, allocation_values
+
+def generate_income_projection_chart(portfolio_data):
+    """
+    Generate monthly income projection data for charting
+    
+    Parameters:
+    - portfolio_data (pandas.DataFrame): Portfolio data
+    
+    Returns:
+    - pandas.DataFrame: Monthly income projection data
+    """
+    # Generate income projection
+    income_projection = get_income_projection(portfolio_data)
+    
+    return income_projection
