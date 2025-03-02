@@ -21,6 +21,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# portfolio imports
+from portfolio import (
+    load_portfolio_data,
+    calculate_portfolio_metrics,
+    update_portfolio_prices,
+    add_portfolio_position,
+    remove_portfolio_position,
+    get_income_projection,
+    get_portfolio_performance_history
+)
+
+# Add these imports at the top of app.py
+import plotly.graph_objects as go
+from etf_analysis import compare_etfs, get_etf_sector_exposure
+from crypto_analysis import get_crypto_data, analyze_crypto, forecast_crypto
+
 # Import local modules
 from dividend_analyzer import DividendAnalyzer, show_dividend_education, filter_monthly_dividend_stocks
 from config import Config, MODEL_DESCRIPTIONS
