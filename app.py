@@ -1,10 +1,10 @@
+# app.py
 import streamlit as st
 from datetime import datetime, timedelta
 import logging
 import sys
 from typing import Optional, Tuple, Dict
 import pandas as pd
-import numpy as np
 import traceback
 import yfinance as yf
 import os
@@ -37,26 +37,11 @@ from forecasting import (
     display_confidence_analysis
 )
 
-# Import additional analysis modules
-from portfolio import (
-    load_portfolio_data, 
-    calculate_portfolio_metrics, 
-    update_portfolio_prices,
-    add_portfolio_position,
-    remove_portfolio_position,
-    get_income_projection,
-    get_portfolio_performance_history
-)
-from etf_analysis import compare_etfs, get_etf_sector_exposure
-from crypto_analysis import get_crypto_data, analyze_crypto, forecast_crypto
-
 # Try to import from sentiment_analyzer
 try:
     from sentiment_analyzer import (
         MultiSourceSentimentAnalyzer,
-        get_sentiment_data,
-        display_sentiment_impact_analysis,
-        display_sentiment_impact_results
+        get_sentiment_data
     )
 except ImportError:
     logger.warning("Could not import from sentiment_analyzer, some functionality may be limited")
@@ -64,12 +49,6 @@ except ImportError:
     def get_sentiment_data(*args, **kwargs):
         st.warning("Sentiment analysis functionality is not available")
         return None
-    
-    def display_sentiment_impact_analysis(*args, **kwargs):
-        st.warning("Sentiment impact analysis not available")
-    
-    def display_sentiment_impact_results(*args, **kwargs):
-        st.warning("Sentiment impact results not available")
     
     class MultiSourceSentimentAnalyzer:
         def __init__(self):
@@ -97,11 +76,14 @@ from treasury_interface import display_treasury_dashboard
 # Try to import from forecast_display if it exists
 try:
     from forecast_display import (
-        display_forecast_results
+        display_forecast_results,
+        display_sentiment_impact_analysis,
+        display_sentiment_impact_results
     )
 except ImportError:
     logger.warning("Could not import from forecast_display, using built-in functions")
     
+    # Define placeholder functions that use the imported forecasting functions
     def display_forecast_results(price_data, forecast, impact_metrics, forecast_type, asset_type, symbol):
         """Display forecast results using built-in functions"""
         try:
@@ -115,6 +97,17 @@ except ImportError:
         except Exception as e:
             logger.error(f"Error displaying forecast results: {str(e)}")
             st.error(f"Error displaying forecast results: {str(e)}")
+    
+    def display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source):
+        """Placeholder for sentiment impact analysis display"""
+        st.subheader("🔍 Sentiment Analysis Configuration")
+        st.info(f"Analyzing sentiment data from {sentiment_source} for the past {sentiment_period} days with a weight of {sentiment_weight:.2f}")
+    
+    def display_sentiment_impact_results(sentiment_data, impact_metrics):
+        """Placeholder for sentiment impact results display"""
+        if sentiment_data is not None:
+            st.subheader("📊 Sentiment Impact Analysis")
+            st.info("Sentiment analysis has been incorporated into the forecast")
 
 def display_header():
     """Display the application header with styling"""
@@ -140,7 +133,8 @@ def setup_sidebar() -> Tuple[str, str]:
         st.header("🔮 Model Configuration")
         selected_model = st.selectbox(
             "Select Forecasting Model",
-            list(MODEL_DESCRIPTIONS.keys())
+            list(MODEL_DESCRIPTIONS.keys()),
+            key="model_selection"  # Add unique key
         )
 
         if selected_model in MODEL_DESCRIPTIONS:
@@ -164,7 +158,8 @@ def setup_sidebar() -> Tuple[str, str]:
         selected_indicator = st.selectbox(
             "Select Economic Indicator",
             ['None'] + list(Config.INDICATORS.keys()),
-            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x
+            format_func=lambda x: Config.INDICATORS.get(x, x) if x != 'None' else x,
+            key="economic_indicator_selection"  # Add unique key
         )
 
         st.header("📊 Data Sources")
@@ -182,7 +177,8 @@ def get_user_inputs() -> Tuple[str, str, int]:
         asset_type = st.selectbox(
             "Select Asset Type",
             Config.ASSET_TYPES,
-            help="Choose between Stocks and Cryptocurrency"
+            help="Choose between Stocks and Cryptocurrency",
+            key="asset_type_selection"  # Add unique key
         )
     
     with col2:
@@ -190,20 +186,23 @@ def get_user_inputs() -> Tuple[str, str, int]:
             symbol = st.text_input(
                 "Enter Stock Symbol",
                 Config.DEFAULT_TICKER,
-                help="Enter a valid stock symbol (e.g., AAPL, MSFT)"
+                help="Enter a valid stock symbol (e.g., AAPL, MSFT)",
+                key="stock_symbol_input"  # Add unique key
             ).upper()
         else:
             symbol = st.text_input(
                 "Enter Cryptocurrency ID",
                 Config.DEFAULT_CRYPTO,
-                help="Enter a valid cryptocurrency ID (e.g., bitcoin, xrp)"
+                help="Enter a valid cryptocurrency ID (e.g., bitcoin, xrp)",
+                key="crypto_symbol_input"  # Add unique key
             ).lower()
     
     with col3:
         periods = st.slider(
             "Forecast Period (days)",
             7, 90, Config.DEFAULT_PERIODS,
-            help="Select the number of days to forecast"
+            help="Select the number of days to forecast",
+            key="forecast_periods_slider"  # Add unique key
         )
     
     return asset_type, symbol, periods
@@ -216,21 +215,24 @@ def get_sentiment_settings() -> Tuple[int, float, str]:
         sentiment_period = st.slider(
             "Sentiment Analysis Period (days)",
             7, 90, 30,
-            help="Historical period for sentiment analysis"
+            help="Historical period for sentiment analysis",
+            key="sentiment_analysis_period"  # Add unique key
         )
     
     with col2:
         sentiment_weight = st.slider(
             "Sentiment Impact Weight",
             0.0, 1.0, 0.5,
-            help="Weight of sentiment analysis in the forecast (0 = none, 1 = maximum)"
+            help="Weight of sentiment analysis in the forecast (0 = none, 1 = maximum)",
+            key="sentiment_impact_weight"  # Add unique key
         )
     
     with col3:
         sentiment_source = st.selectbox(
             "Sentiment Data Source",
             ["Multi-Source", "GDELT", "Yahoo Finance", "News API"],
-            help="Choose the source for sentiment analysis"
+            help="Choose the source for sentiment analysis",
+            key="sentiment_source_selection"  # Add unique key
         )
     
     return sentiment_period, sentiment_weight, sentiment_source
