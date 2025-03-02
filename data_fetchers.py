@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 class DataSourceManager:
     """Manages multiple data source connections and API keys"""
     def __init__(self):
-        self.fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
+        self.fred = fredapi.Fred(api_key=Config().FRED_API_KEY)
         self.cg = CoinGeckoAPI()
-        self.polygon_headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
+        self.polygon_headers = {"Authorization": f"Bearer {Config().POLYGON_API_KEY}"}
 
     @staticmethod
     @st.cache_data(ttl=Config.CACHE_TTL)
@@ -42,7 +42,7 @@ class DataSourceManager:
     def fetch_polygon_data(symbol: str, start_date: str, end_date: str) -> Optional[pd.DataFrame]:
         """Fetch data from Polygon.io"""
         try:
-            headers = {"Authorization": f"Bearer {Config.POLYGON_API_KEY}"}
+            headers = {"Authorization": f"Bearer {Config().POLYGON_API_KEY}"}
             url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start_date}/{end_date}"
             response = requests.get(url, headers=headers)
             
@@ -57,6 +57,78 @@ class DataSourceManager:
             return None
         except Exception as e:
             logger.warning(f"Polygon.io fetch failed: {str(e)}")
+            return None
+            
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def fetch_coingecko_data(coin_id: str, days: int = 365) -> Optional[pd.DataFrame]:
+        """Fetch cryptocurrency data from CoinGecko"""
+        try:
+            cg = CoinGeckoAPI()
+            data = cg.get_coin_market_chart_by_id(id=coin_id.lower(), vs_currency='usd', days=days)
+            
+            if data and 'prices' in data:
+                # Create DataFrame for prices
+                prices_df = pd.DataFrame(data['prices'], columns=['timestamp', 'Close'])
+                
+                # Add volumes if available
+                if 'total_volumes' in data:
+                    volumes_df = pd.DataFrame(data['total_volumes'], columns=['timestamp', 'Volume'])
+                    df = prices_df.merge(volumes_df[['timestamp', 'Volume']], on='timestamp', how='left')
+                else:
+                    df = prices_df
+                
+                # Convert timestamp
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('timestamp', inplace=True)
+                
+                # Add additional columns to match Yahoo Finance format
+                df['Open'] = df['Close'].shift(1)
+                df['High'] = df['Close'] * 1.001  # Approximate
+                df['Low'] = df['Close'] * 0.999   # Approximate
+                
+                return df
+            return None
+        except Exception as e:
+            logger.warning(f"CoinGecko fetch failed: {str(e)}")
+            return None
+            
+    @staticmethod
+    @st.cache_data(ttl=Config.CACHE_TTL)
+    def fetch_alpha_vantage_data(symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch data from Alpha Vantage"""
+        try:
+            api_key = Config().ALPHA_VANTAGE_API_KEY
+            url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={symbol}&apikey={api_key}&outputsize=full"
+            response = requests.get(url)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'Time Series (Daily)' in data:
+                    df = pd.DataFrame(data['Time Series (Daily)'])
+                    df = df.T
+                    df.index = pd.to_datetime(df.index)
+                    
+                    # Rename columns
+                    column_map = {
+                        '1. open': 'Open',
+                        '2. high': 'High',
+                        '3. low': 'Low',
+                        '4. close': 'Close',
+                        '5. adjusted close': 'Adj Close',
+                        '6. volume': 'Volume'
+                    }
+                    df = df.rename(columns=column_map)
+                    
+                    # Convert to numeric
+                    for col in df.columns:
+                        df[col] = pd.to_numeric(df[col])
+                    
+                    return df
+            
+            return None
+        except Exception as e:
+            logger.warning(f"Alpha Vantage fetch failed: {str(e)}")
             return None
 
 class EconomicIndicators:
@@ -128,7 +200,7 @@ class EconomicIndicators:
             if indicator == 'IEF':
                 df = EconomicIndicators._get_ief_data()
             else:
-                fred = fredapi.Fred(api_key=Config.FRED_API_KEY)
+                fred = fredapi.Fred(api_key=Config().FRED_API_KEY)
                 indicator_details = EconomicIndicators._get_indicator_details()
                 indicator_info = indicator_details[indicator]
                 df = EconomicIndicators._get_fred_data(fred, indicator_info)
@@ -229,6 +301,41 @@ class EconomicIndicators:
         except Exception as e:
             st.error(f"Error analyzing {indicator}: {str(e)}")
             return {}
+            
+    def create_indicator_plot(self, df: pd.DataFrame, indicator: str):
+        """Create a plotly plot for an economic indicator"""
+        import plotly.graph_objects as go
+        
+        if df is None or df.empty:
+            return None
+            
+        # Get indicator info for title and labels
+        info = self.get_indicator_info(indicator)
+        title = info.get('description', indicator)
+        
+        # Create figure
+        fig = go.Figure()
+        
+        # Add line trace
+        fig.add_trace(
+            go.Scatter(
+                x=df['index'],
+                y=df['value'],
+                mode='lines',
+                name=title
+            )
+        )
+        
+        # Customize layout
+        fig.update_layout(
+            title=f"{title} ({info.get('units', '')})",
+            xaxis_title="Date",
+            yaxis_title=info.get('units', 'Value'),
+            hovermode="x unified"
+        )
+        
+        return fig
+
 
 class RealEstateIndicators:
     def __init__(self):
@@ -253,6 +360,7 @@ class RealEstateIndicators:
             logger.error(f"Error fetching real estate indicator data: {str(e)}")
             return None
 
+
 class AssetDataFetcher:
     # Crypto symbol mappings with proper CoinGecko IDs
     CRYPTO_MAPPINGS = {
@@ -270,6 +378,10 @@ class AssetDataFetcher:
 
     def get_stock_data(self, symbol: str) -> Optional[pd.DataFrame]:
         """Public wrapper for fetching stock data"""
+        return DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
+        
+    def get_etf_data(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Public wrapper for fetching ETF data"""
         return DataSourceManager.fetch_yahoo_data(symbol, Config.START, Config.TODAY)
 
     def get_crypto_data(self, symbol: str) -> Optional[pd.DataFrame]:
@@ -315,8 +427,26 @@ class AssetDataFetcher:
                 df.set_index('timestamp', inplace=True)
                 df.index = df.index.tz_localize(None)
                 df['Open'] = df['Close'].shift(1)
-                df['High'] = df['Close']
-                df['Low'] = df['Close']
+                df['High'] = df['Close'] * 1.005  # Approximate based on typical daily range
+                df['Low'] = df['Close'] * 0.995   # Approximate based on typical daily range
+                
+                # Add crypto info to df.attrs
+                try:
+                    coin_info = cg.get_coin_by_id(id=mappings['coingecko'])
+                    df.attrs['info'] = {
+                        'name': coin_info.get('name', symbol),
+                        'market_cap': coin_info.get('market_data', {}).get('market_cap', {}).get('usd', 'N/A'),
+                        'volume': coin_info.get('market_data', {}).get('total_volume', {}).get('usd', 'N/A'),
+                        'circulating_supply': coin_info.get('market_data', {}).get('circulating_supply', 'N/A')
+                    }
+                except:
+                    df.attrs['info'] = {
+                        'name': mappings['coingecko'].title(),
+                        'market_cap': 'N/A',
+                        'volume': 'N/A',
+                        'circulating_supply': 'N/A'
+                    }
+                
                 df = df.ffill()
                 return df
             error_messages.append("CoinGecko: No data returned")
@@ -330,6 +460,15 @@ class AssetDataFetcher:
             data = DataSourceManager.fetch_polygon_data(mappings['polygon'], Config.START, Config.TODAY)
             if data is not None:
                 logger.info(f"Successfully fetched {symbol} from Polygon.io")
+                
+                # Add basic info attributes
+                data.attrs['info'] = {
+                    'name': symbol,
+                    'market_cap': 'N/A',
+                    'volume': 'N/A',
+                    'circulating_supply': 'N/A'
+                }
+                
                 return data
             error_messages.append("Polygon.io: No data returned")
         except Exception as e:
@@ -342,6 +481,25 @@ class AssetDataFetcher:
             data = DataSourceManager.fetch_yahoo_data(mappings['yahoo'], Config.START, Config.TODAY)
             if data is not None:
                 logger.info(f"Successfully fetched {symbol} from Yahoo Finance")
+                
+                # Try to get info from Yahoo Finance
+                try:
+                    ticker = yf.Ticker(mappings['yahoo'])
+                    info = ticker.info
+                    data.attrs['info'] = {
+                        'name': info.get('name', symbol),
+                        'market_cap': info.get('marketCap', 'N/A'),
+                        'volume': info.get('volume', 'N/A'),
+                        'circulating_supply': info.get('circulatingSupply', 'N/A')
+                    }
+                except:
+                    data.attrs['info'] = {
+                        'name': symbol,
+                        'market_cap': 'N/A',
+                        'volume': 'N/A',
+                        'circulating_supply': 'N/A'
+                    }
+                
                 return data
             error_messages.append("Yahoo Finance: No data returned")
         except Exception as e:

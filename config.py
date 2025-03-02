@@ -1,4 +1,3 @@
-# config.py
 import streamlit as st
 from datetime import date, timedelta
 
@@ -11,24 +10,43 @@ class Config:
     DEFAULT_TICKER = "MSFT"
     DEFAULT_CRYPTO = "xrp"
     DEFAULT_PERIODS = 30
-    ASSET_TYPES = ["Stocks", "Cryptocurrency"]
+    ASSET_TYPES = ["Stocks", "Cryptocurrency", "ETFs"]
     
     # API Keys from Streamlit secrets
     @property
     def FRED_API_KEY(self):
-        return st.secrets["api_keys"]["fred"]
+        try:
+            return st.secrets["api_keys"]["fred"]
+        except:
+            return "a81e9c33d8dbac1cc1309e51527e0d53"  # Fallback key for development
     
     @property
     def ALPHA_VANTAGE_API_KEY(self):
-        return st.secrets["api_keys"]["alpha_vantage"]
+        try:
+            return st.secrets["api_keys"]["alpha_vantage"]
+        except:
+            return "E3R1QOXBCPW9924S"  # Fallback key for development
     
     @property
     def POLYGON_API_KEY(self):
-        return st.secrets["api_keys"]["polygon"]
+        try:
+            return st.secrets["api_keys"]["polygon"]
+        except:
+            return "9rP1CLlxuoRWPvkEiOMxxIwNyffjUEb4"  # Fallback key for development
     
     @property
     def NEWS_API_KEY(self):
-        return st.secrets["api_keys"]["news"]
+        try:
+            return st.secrets["api_keys"]["news"]
+        except:
+            return ""  # Fallback key for development
+            
+    @property
+    def COINGECKO_API_KEY(self):
+        try:
+            return st.secrets["api_keys"]["coingecko"]
+        except:
+            return ""  # Fallback key for development
     
     # Data Sources
     DATA_SOURCES = {
@@ -156,6 +174,29 @@ class Config:
         'lookback_period': 365,
         'confidence_threshold': 0.6
     }
+    
+    # Cryptocurrency Settings
+    CRYPTO_SETTINGS = {
+        'DEFAULT_PERIOD': '1d',
+        'AVAILABLE_PERIODS': ['1d', '1wk', '1mo'],
+        'INDICATORS': ['RSI', 'MACD', 'Moving Averages'],
+        'FORECAST_METHODS': ['ARIMA', 'Prophet', 'Linear Regression', 'LSTM']
+    }
+    
+    # ETF Settings
+    ETF_SETTINGS = {
+        'DEFAULT_PERIOD': '1d',
+        'AVAILABLE_PERIODS': ['1d', '1wk', '1mo'],
+        'COMPARISON_METRICS': ['Expense Ratio', 'Dividend Yield', 'Performance', 'Volatility']
+    }
+    
+    # Portfolio Settings
+    PORTFOLIO_SETTINGS = {
+        'DEFAULT_VIEW': 'Summary',
+        'AVAILABLE_VIEWS': ['Summary', 'Holdings', 'Performance', 'Income'],
+        'INCOME_PROJECTION_MONTHS': 12,
+        'PERFORMANCE_TIMEFRAMES': ['1M', '3M', '6M', 'YTD', '1Y']
+    }
 
 # Model descriptions moved outside the Config class since they're static
 MODEL_DESCRIPTIONS = {
@@ -199,6 +240,20 @@ MODEL_DESCRIPTIONS = {
         "confidence_rating": 0.75,
         "best_use_cases": ["Trend following"],
         "limitations": ["Under development"],
+        "development_status": "Under Development"
+    },
+    "ARIMA": {
+        "description": "Time series forecasting model for stationary data",
+        "confidence_rating": 0.80,
+        "best_use_cases": ["Cryptocurrency forecasting", "Volatility prediction"],
+        "limitations": ["Assumes stationarity", "Limited with complex patterns"],
+        "development_status": "Active"
+    },
+    "LSTM": {
+        "description": "Deep learning model for time series with long-term dependencies",
+        "confidence_rating": 0.85,
+        "best_use_cases": ["Complex pattern recognition", "Crypto price prediction"],
+        "limitations": ["Requires significant training data", "Computationally intensive"],
         "development_status": "Under Development"
     },
     "Markov Chain": {

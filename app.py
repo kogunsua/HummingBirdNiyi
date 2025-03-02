@@ -4,6 +4,7 @@ import logging
 import sys
 from typing import Optional, Tuple, Dict
 import pandas as pd
+import numpy as np
 import traceback
 import yfinance as yf
 import os
@@ -36,11 +37,26 @@ from forecasting import (
     display_confidence_analysis
 )
 
+# Import additional analysis modules
+from portfolio import (
+    load_portfolio_data, 
+    calculate_portfolio_metrics, 
+    update_portfolio_prices,
+    add_portfolio_position,
+    remove_portfolio_position,
+    get_income_projection,
+    get_portfolio_performance_history
+)
+from etf_analysis import compare_etfs, get_etf_sector_exposure
+from crypto_analysis import get_crypto_data, analyze_crypto, forecast_crypto
+
 # Try to import from sentiment_analyzer
 try:
     from sentiment_analyzer import (
         MultiSourceSentimentAnalyzer,
-        get_sentiment_data
+        get_sentiment_data,
+        display_sentiment_impact_analysis,
+        display_sentiment_impact_results
     )
 except ImportError:
     logger.warning("Could not import from sentiment_analyzer, some functionality may be limited")
@@ -48,6 +64,12 @@ except ImportError:
     def get_sentiment_data(*args, **kwargs):
         st.warning("Sentiment analysis functionality is not available")
         return None
+    
+    def display_sentiment_impact_analysis(*args, **kwargs):
+        st.warning("Sentiment impact analysis not available")
+    
+    def display_sentiment_impact_results(*args, **kwargs):
+        st.warning("Sentiment impact results not available")
     
     class MultiSourceSentimentAnalyzer:
         def __init__(self):
@@ -75,14 +97,11 @@ from treasury_interface import display_treasury_dashboard
 # Try to import from forecast_display if it exists
 try:
     from forecast_display import (
-        display_forecast_results,
-        display_sentiment_impact_analysis,
-        display_sentiment_impact_results
+        display_forecast_results
     )
 except ImportError:
     logger.warning("Could not import from forecast_display, using built-in functions")
     
-    # Define placeholder functions that use the imported forecasting functions
     def display_forecast_results(price_data, forecast, impact_metrics, forecast_type, asset_type, symbol):
         """Display forecast results using built-in functions"""
         try:
@@ -96,17 +115,6 @@ except ImportError:
         except Exception as e:
             logger.error(f"Error displaying forecast results: {str(e)}")
             st.error(f"Error displaying forecast results: {str(e)}")
-    
-    def display_sentiment_impact_analysis(sentiment_period, sentiment_weight, sentiment_source):
-        """Placeholder for sentiment impact analysis display"""
-        st.subheader("🔍 Sentiment Analysis Configuration")
-        st.info(f"Analyzing sentiment data from {sentiment_source} for the past {sentiment_period} days with a weight of {sentiment_weight:.2f}")
-    
-    def display_sentiment_impact_results(sentiment_data, impact_metrics):
-        """Placeholder for sentiment impact results display"""
-        if sentiment_data is not None:
-            st.subheader("📊 Sentiment Impact Analysis")
-            st.info("Sentiment analysis has been incorporated into the forecast")
 
 def display_header():
     """Display the application header with styling"""
@@ -319,9 +327,12 @@ def main():
         display_header()
         
         # Create tabs for different analyses
-        forecast_tab, dividend_tab, treasury_tab = st.tabs([
+        forecast_tab, dividend_tab, portfolio_tab, etf_tab, crypto_tab, treasury_tab = st.tabs([
             "📈 Price Forecast", 
             "💰 Dividend Analysis",
+            "💼 Portfolio Management", 
+            "🏢 ETF Analysis", 
+            "🪙 Cryptocurrency", 
             "🏦 Treasury Analysis"
         ])
         
@@ -406,7 +417,7 @@ def main():
                                     selected_indicator,
                                     asset_type
                                 )
-                                
+
                                 if forecast is not None:
                                     st.success("Forecast generated successfully!")
                                     
@@ -444,7 +455,7 @@ def main():
             custom_tickers = st.text_input(
                 "Enter Stock Symbol",
                 Config.DIVIDEND_DEFAULTS['DEFAULT_DIVIDEND_STOCKS'],
-                help="Enter stock symbol (e.g.MAIN)"
+                help="Enter stock symbol (e.g. MAIN)"
             )
             
             # Analyze button
@@ -460,7 +471,218 @@ def main():
                     st.error("An error occurred during dividend analysis. Please try again.")
                     st.exception(e)
         
-        # Add Treasury Analysis Tab
+        with portfolio_tab:
+            st.title("Portfolio Management")
+            
+            # Load current portfolio
+            portfolio_data = load_portfolio_data()
+            
+            # Display portfolio metrics
+            st.subheader("Portfolio Overview")
+            metrics = calculate_portfolio_metrics(portfolio_data)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Value", f"${metrics['total_value']:,.2f}")
+            with col2:
+                st.metric("Monthly Income", f"${metrics['monthly_income']:,.2f}")
+            with col3:
+                st.metric("Avg Dividend Yield", f"{metrics['avg_yield']:.2f}%")
+            
+            # Portfolio management actions
+            st.subheader("Portfolio Actions")
+            action = st.selectbox("Select Action", [
+                "Add Position", 
+                "Remove Position", 
+                "Update Prices", 
+                "Income Projection",
+                "Performance History"
+            ])
+            
+            if action == "Add Position":
+                symbol = st.text_input("Enter Stock Symbol").upper()
+                quantity = st.number_input("Enter Quantity", min_value=0.0, step=0.001)
+                price = st.number_input("Enter Price (Optional)", min_value=0.0, step=0.01, value=0.0)
+                
+                if st.button("Add Position"):
+                    try:
+                        price_input = price if price > 0 else None
+                        updated_portfolio = add_portfolio_position(portfolio_data, symbol, quantity, price_input)
+                        st.success(f"Added {quantity} shares of {symbol}")
+                        portfolio_data = updated_portfolio
+                    except Exception as e:
+                        st.error(f"Error adding position: {str(e)}")
+            
+            elif action == "Remove Position":
+                symbol = st.text_input("Enter Stock Symbol").upper()
+                quantity = st.number_input("Enter Quantity to Remove (Leave 0 to remove entire position)", min_value=0.0, step=0.001)
+                
+                if st.button("Remove Position"):
+                    try:
+                        quantity_input = quantity if quantity > 0 else None
+                        updated_portfolio = remove_portfolio_position(portfolio_data, symbol, quantity_input)
+                        st.success(f"Removed {'entire position' if quantity_input is None else f'{quantity} shares'} of {symbol}")
+                        portfolio_data = updated_portfolio
+                    except Exception as e:
+                        st.error(f"Error removing position: {str(e)}")
+            
+            elif action == "Update Prices":
+                if st.button("Refresh Portfolio Prices"):
+                    try:
+                        updated_portfolio = update_portfolio_prices(portfolio_data)
+                        st.success("Portfolio prices updated")
+                        portfolio_data = updated_portfolio
+                    except Exception as e:
+                        st.error(f"Error updating prices: {str(e)}")
+            
+            elif action == "Income Projection":
+                months = st.slider("Projection Period (Months)", 3, 24, 12)
+                if st.button("Generate Income Projection"):
+                    try:
+                        income_projection = get_income_projection(portfolio_data, months)
+                        st.subheader("Monthly Dividend Income Projection")
+                        st.line_chart(income_projection.set_index('Month')['Income'])
+                        st.dataframe(income_projection)
+                    except Exception as e:
+                        st.error(f"Error generating income projection: {str(e)}")
+            
+            elif action == "Performance History":
+                st.subheader("Portfolio Performance")
+                start_date = st.date_input("Start Date", datetime.now() - timedelta(days=365))
+                end_date = st.date_input("End Date", datetime.now())
+                
+                if st.button("Get Performance"):
+                    try:
+                        performance = get_portfolio_performance_history(portfolio_data, start_date, end_date)
+                        st.line_chart(performance['Value'])
+                        st.subheader("Detailed Performance Metrics")
+                        st.dataframe(performance)
+                    except Exception as e:
+                        st.error(f"Error retrieving performance history: {str(e)}")
+        
+        with etf_tab:
+            st.title("ETF Analysis")
+            
+            # ETF Comparison
+            st.subheader("ETF Comparison")
+            default_etfs = ['VOO', 'SPY', 'VTI']
+            comparison_etfs = st.multiselect(
+                "Select ETFs to Compare", 
+                default_etfs, 
+                default=default_etfs
+            )
+            
+            start_date = st.date_input("Start Date for Comparison", datetime.now() - timedelta(days=365))
+            end_date = st.date_input("End Date for Comparison", datetime.now())
+            
+            if st.button("Compare ETFs"):
+                try:
+                    comparison_results = compare_etfs(comparison_etfs, start_date, end_date)
+                    st.dataframe(comparison_results)
+                except Exception as e:
+                    st.error(f"ETF comparison error: {str(e)}")
+            
+            # Sector Exposure
+            st.subheader("ETF Sector Exposure")
+            sector_etf = st.text_input("Enter ETF Symbol for Sector Analysis", "VOO")
+            
+            if st.button("Get Sector Exposure"):
+                try:
+                    sector_exposure = get_etf_sector_exposure(sector_etf)
+                    if sector_exposure:
+                        # Convert to DataFrame for better display
+                        sector_df = pd.DataFrame.from_dict(sector_exposure, orient='index', columns=['Percentage'])
+                        sector_df.index.name = 'Sector'
+                        sector_df.reset_index(inplace=True)
+                        sector_df.sort_values('Percentage', ascending=False, inplace=True)
+                        
+                        # Display as table
+                        st.dataframe(sector_df.style.format({'Percentage': '{:.2f}%'}))
+                        
+                        # Display pie chart
+                        fig = go.Figure(data=[go.Pie(
+                            labels=sector_df['Sector'], 
+                            values=sector_df['Percentage'], 
+                            hole=.3
+                        )])
+                        fig.update_layout(title=f"Sector Exposure for {sector_etf}")
+                        st.plotly_chart(fig)
+                    else:
+                        st.warning("No sector exposure data found.")
+                except Exception as e:
+                    st.error(f"Sector exposure error: {str(e)}")
+        
+        with crypto_tab:
+            st.title("Cryptocurrency Analysis")
+            
+            # Crypto selection
+            crypto_symbol = st.text_input("Enter Cryptocurrency Symbol", "BTC")
+            start_date = st.date_input("Start Date", datetime.now() - timedelta(days=365))
+            end_date = st.date_input("End Date", datetime.now())
+            
+            # Forecast method selection
+            forecast_method = st.selectbox(
+                "Select Forecast Method", 
+                ["ARIMA", "Prophet", "Linear Regression"]
+            )
+            
+            if st.button("Analyze Cryptocurrency"):
+                try:
+                    # Get crypto data
+                    crypto_data = get_crypto_data(crypto_symbol, start_date, end_date)
+                    
+                    # Analyze data
+                    analysis = analyze_crypto(crypto_data)
+                    
+                    # Display basic metrics
+                    st.subheader(f"{analysis['Name']} Cryptocurrency Analysis")
+                    
+                    # Display metrics in columns
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Market Cap", analysis['Market Cap'])
+                        st.metric("24h Volume", analysis['24h Volume'])
+                    
+                    with col2:
+                        st.metric("7D Return", analysis['7D Return'])
+                        st.metric("30D Return", analysis['30D Return'])
+                    
+                    with col3:
+                        st.metric("YTD Return", analysis['YTD Return'])
+                        st.metric("Volatility", analysis['Volatility (Annual)'])
+                    
+                    # Additional metrics
+                    st.markdown(f"**Sentiment Score:** {analysis['Sentiment Score']}")
+                    st.markdown(f"**RSI:** {analysis['RSI']}")
+                    
+                    # Forecast
+                    st.subheader("Price Forecast")
+                    forecast_data = forecast_crypto(crypto_data, method=forecast_method)
+                    
+                    # Plot forecast
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=crypto_data.index, 
+                        y=crypto_data['Close'], 
+                        mode='lines', 
+                        name='Historical Price'
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=forecast_data.index, 
+                        y=forecast_data['Forecast'], 
+                        mode='lines', 
+                        name='Forecast'
+                    ))
+                    fig.update_layout(
+                        title=f"{crypto_symbol.upper()} Price Forecast",
+                        xaxis_title="Date",
+                        yaxis_title="Price (USD)"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                except Exception as e:
+                    st.error(f"Cryptocurrency analysis error: {str(e)}")
+        
         with treasury_tab:
             # Call the imported treasury dashboard function directly
             display_treasury_dashboard()
