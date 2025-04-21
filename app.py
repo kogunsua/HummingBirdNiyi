@@ -19,7 +19,7 @@ def display_footer():
 
 def main():
     st.set_page_config(
-        page_title="HummingBird v2-m",
+        page_title="HummingBird v2-M ",
         page_icon="🐦",
         layout="wide"
     )
@@ -28,8 +28,8 @@ def main():
         # Display branding
         st.markdown("""
             <div style='text-align: center;'>
-                <h1>🐦 HummingBird v2m</h1>
-                <p><i>Digital Asset Stock Forecasting with Economic Indicators</i></p>
+                <h1>🐦 HummingBird v2M</h1>
+                <p><i>Digital Asset Stock Forecasting with Current Economic Indicators</i></p>
                 <p>AvaResearch LLC - A Black Collar Production</p>
             </div>
         """, unsafe_allow_html=True)
